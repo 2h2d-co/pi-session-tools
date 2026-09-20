@@ -6,5 +6,5 @@
     "lib": ["ES2023"],
     "types": ["node"]
   },
-  "include": ["extensions", "src", "test", "oxlint.config.ts"]
+  "include": ["extensions", "scripts", "src", "test", "oxlint.config.ts"]
 }

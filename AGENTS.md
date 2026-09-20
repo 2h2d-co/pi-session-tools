@@ -13,5 +13,8 @@
 - Run `mise run check` before committing. Use `mise run fmt` for formatting.
 - Behavioral tests use Node's built-in test runner and Pi's real session manager.
 - Keep `.github/npm-package-files` aligned with the packed files.
-- Maintain `CHANGELOG.md` under `Unreleased` until a separately authorized release.
+- Maintain `CHANGELOG.md` in Keep a Changelog style; keep entries under `Unreleased` for prereleases and move them into a release section only for stable releases.
+- Use `npm run release -- <version>` to build the release package locally, create an SSH-signed `release: v<version>` commit containing its `Npm-Artifact-SHA256` trailer, verify a clean rebuild, and create the matching lightweight tag.
+- Push the release commit and tag atomically; do not use `git tag -a`, `git tag -s`, `git tag -m`, or `cog bump --annotated`.
+- Push stable or prerelease `v<version>` tags and let CI build and stage the package with trusted publishing and provenance, then create the immutable GitHub release from the verified archive and the version's changelog section. Never create GitHub releases by hand.
 - Publication and installation into a user's live Pi configuration are separate operations.

@@ -235,6 +235,26 @@ hosts. No real provider requests or live user sessions are needed.
 types, formatting, lint, repository hygiene, secrets, workflows, tests,
 dependency audit, and package contents.
 
-Publishing to npm, configuring trusted publishing, changing repository
-protections, and installing into a user's live Pi configuration are separate,
-explicitly authorized operations.
+## Release
+
+Release flow:
+
+1. Run `npm run release -- X.Y.Z` from a clean, synchronized `main`. It refuses to
+   continue unless `CHANGELOG.md` has a non-empty section for the version
+   (`Unreleased` for prereleases).
+2. The release command packs the package from the staged Git index, records its
+   SHA-256 in the SSH-signed release commit, rebuilds the commit to prove
+   reproducibility, and creates a lightweight `vX.Y.Z` tag.
+3. Inspect the commit and tag, then push them atomically with
+   `git push --atomic origin main vX.Y.Z`.
+4. A read-only CI job validates the release notes, tests, packs, and inspects the
+   package without publishing credentials.
+5. A separate credentialed job verifies the signed commit and exact package digest
+   before attesting and staging that archive through npm trusted publishing.
+6. A final job creates the immutable GitHub release for the tag from the same
+   verified archive, its checksum, and the version's `CHANGELOG.md` section.
+7. Approve the staged package on npmjs.com or with `npm stage approve <stage-id>`.
+
+Stable versions use `latest`; prereleases derive a non-`latest` dist-tag such as
+`alpha` from their first prerelease identifier. Installing into a user's live Pi
+configuration remains a separate operation.
