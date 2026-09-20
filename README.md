@@ -13,8 +13,9 @@ extension does not launch subagents or restore workspace files.
 
 ## Requirements and loading
 
-Tested with Pi **0.85.1** and Node.js **22.23.2**. The package requires Pi
-`>=0.85.1 <0.86.0` and Node.js `>=22.19.0`.
+Tested with Pi **0.86.0** and Node.js **22.23.2**. The package requires Pi
+`>=0.86.0` and Node.js `>=22.19.0`. Later Pi versions are allowed by the peer
+range. Future breaking API changes may require an extension update.
 
 From this checkout:
 
@@ -82,6 +83,8 @@ not developer-role messages. Static tool guidance explains their meaning.
   the latest user request, and optional tool results. It requires `query`.
 - `read` inspects an entry and nearby context. It requires `entryId`.
   At a branch point, it lists child IDs instead of silently choosing a path.
+  System entries show instruction changes and tool names, not tool schemas.
+  System and usage entries are not completed-turn checkpoints.
 
 Responses include the current session and entry IDs, checkpoint relationships,
 labels, previews, approximate context token counts, and recent operation phases.
@@ -179,10 +182,17 @@ The command completion is joined by the settled event so Pi's print and JSON
 hosts do not exit before the handoff completes. Forks and new sessions use Pi's
 fresh replacement context. Continuation starts after the host finishes its
 replacement action, so a late editor reset cannot erase a new draft.
+For forks and new sessions, the extension saves the handoff first, then submits
+a short, explicitly agent-authored continuation prompt. This runs Pi's normal
+input handlers and prompt preparation before the first response. It preserves
+system instructions, project instructions, and extension prompt/tool changes.
+The continuation prompt grants no new authorization.
 Compaction waits for its completion callback.
 
-Incoming user input, unsubmitted editor drafts, session changes, failed validation, or cancellation from
-another extension stop a pending handoff. Already-completed context changes are
+Incoming user input, unsubmitted editor drafts, session changes, failed
+validation, or cancellation from another extension stop a pending handoff.
+Input handlers can also stop the replacement continuation after its handoff
+has been saved. Already-completed context changes are
 not silently undone. Source history remains available.
 
 Operation records use unique IDs. Reloading or resuming a session never replays

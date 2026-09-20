@@ -17,6 +17,9 @@ import {
   type ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
 
+export const SYSTEM_INSTRUCTIONS = "Base test instructions: Never deploy without approval.";
+export const PROJECT_INSTRUCTIONS = "Project test instructions: Preserve all existing data.";
+
 /** A real Pi runtime with an offline scripted provider and a private temporary agent home. */
 export async function testRuntime(
   extra?: ExtensionFactory,
@@ -44,6 +47,10 @@ export async function testRuntime(
         retry: { enabled: false },
       }),
       resourceLoaderOptions: {
+        systemPromptOverride: () => SYSTEM_INSTRUCTIONS,
+        agentsFilesOverride: () => ({
+          agentsFiles: [{ path: join(cwd, "AGENTS.md"), content: PROJECT_INSTRUCTIONS }],
+        }),
         noExtensions: true,
         noSkills: true,
         noPromptTemplates: true,

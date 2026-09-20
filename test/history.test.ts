@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fauxAssistantMessage, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai";
+import {
+  fauxAssistantMessage,
+  fauxThinking,
+  fauxToolCall,
+  getCurrentSystemPrompt,
+  getCurrentTools,
+} from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import { checkpoints, entryText, inspectSession, requireCheckpoint } from "../src/history.ts";
 
 function readObject(value: unknown): Record<string, unknown> {
@@ -43,7 +50,7 @@ test("only complete assistant responses and complete tool batches are checkpoint
 });
 
 test("invalid, truncated, and interrupted tool protocols are not checkpoints", () => {
-  for (const kind of ["orphan", "truncated", "interleaved", "duplicate"]) {
+  for (const kind of ["orphan", "truncated", "interleaved", "system-interleaved", "duplicate"]) {
     const sm = SessionManager.inMemory();
     if (kind !== "orphan") {
       sm.appendMessage(
@@ -56,6 +63,8 @@ test("invalid, truncated, and interrupted tool protocols are not checkpoints", (
       );
     }
     if (kind === "interleaved") sm.appendCustomMessageEntry("other", "interrupt", false);
+    if (kind === "system-interleaved")
+      sm.appendMessage({ role: "system", content: "Interrupt", timestamp: 1 });
     const last = sm.appendMessage({
       role: "toolResult",
       toolCallId: "one",
@@ -198,4 +207,66 @@ test("inspection reports a broken compaction replay rather than offering a usabl
   assert.throws(() => requireCheckpoint(sm, last), /unmatched tool result/);
   const page = inspectSession(sm, { view: "search", query: "Later turn" });
   assert.match(JSON.stringify(page), /"canContinue":false/);
+});
+
+test("read exposes system instructions and tool names without exposing tool schemas", () => {
+  const sm = SessionManager.inMemory();
+  const id = sm.appendMessage({
+    role: "system",
+    content: [{ type: "text", text: "Current instructions" }],
+    sections: { policy: "Read only", retired: null },
+    toolsAdded: [
+      {
+        name: "lookup",
+        description: "do-not-expose-description",
+        parameters: Type.Object({
+          privateField: Type.String({ description: "do-not-expose-schema" }),
+        }),
+      },
+    ],
+    toolsRemoved: [{ name: "write" }],
+    timestamp: 1,
+  });
+  const result = readObject(inspectSession(sm, { view: "read", entryId: id }));
+  assert.equal(result["checkpoint"], false);
+  assert.match(String(result["content"]), /Current instructions/);
+  assert.match(String(result["content"]), /Updated system prompt section "policy":\n\nRead only/);
+  assert.match(String(result["content"]), /Removed system prompt section "retired"/);
+  assert.match(String(result["content"]), /\[tool added: lookup\]/);
+  assert.match(String(result["content"]), /\[tool removed: write\]/);
+  assert.doesNotMatch(JSON.stringify(result), /do-not-expose|privateField/);
+  assert.throws(() => requireCheckpoint(sm, id), /not a completed turn/);
+});
+
+test("system updates and usage entries preserve checkpoints and compaction replay", () => {
+  const sm = SessionManager.inMemory();
+  const tool = { name: "lookup", description: "Lookup", parameters: Type.Object({}) };
+  sm.appendMessage({
+    role: "system",
+    content: "",
+    sections: { policy: "Old policy" },
+    toolsAdded: [tool],
+    timestamp: 1,
+  });
+  const first = sm.appendMessage(fauxAssistantMessage("First completed turn"));
+  const usage = sm.appendUsage("future_usage_kind", "faux", "faux", fauxAssistantMessage("").usage);
+  const system = sm.appendMessage({
+    role: "system",
+    content: "",
+    sections: { policy: "Current policy" },
+    toolsRemoved: [{ name: tool.name }],
+    timestamp: 2,
+  });
+  const kept = sm.appendMessage({ role: "user", content: "Keep going", timestamp: 3 });
+  const second = sm.appendMessage(fauxAssistantMessage("Second completed turn"));
+  const compact = sm.appendCompaction("Earlier work", kept, 10000);
+  const third = sm.appendMessage(fauxAssistantMessage("After compaction"));
+  assert.deepEqual([...checkpoints(sm.getEntries()).keys()], [first, second, third]);
+  assert.equal(requireCheckpoint(sm, third).parentCheckpointId, second);
+  for (const id of [usage.id, system, compact])
+    assert.throws(() => requireCheckpoint(sm, id), /not a completed turn/);
+  const replay = sm.buildSessionContext().messages;
+  assert.equal(getCurrentSystemPrompt(replay), "Current policy");
+  assert.deepEqual(getCurrentTools(replay), []);
+  assert.match(JSON.stringify(inspectSession(sm, { view: "overview" })), /"canContinue":true/);
 });

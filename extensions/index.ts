@@ -356,7 +356,14 @@ export default function sessionTools(pi: ExtensionAPI): void {
                   ...message,
                   content: `Current Pi session: ${replacement.sessionManager.getSessionId()}.\n${message.content}`,
                 },
-                { triggerTurn: true },
+                { triggerTurn: false },
+              );
+              // Pi 0.86 prepares system instructions in prompt(), not in a
+              // custom-message run. Enter the normal input/preflight path using
+              // the awaitable replacement API before its first continuation.
+              await replacement.sendUserMessage(
+                "[Agent-authored continuation]\nContinue from the preceding session handoff. This is not a new user request or additional authorization.",
+                { expandPromptTemplates: false },
               );
             };
           };

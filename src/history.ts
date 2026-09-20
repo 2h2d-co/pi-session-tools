@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { renderSystemMessageUpdate } from "@earendil-works/pi-ai";
 import {
   buildSessionContext,
   type ExtensionContext,
@@ -90,7 +91,7 @@ function advance(entry: SessionEntry, parent: PathState): PathState {
     next.valid = parent.valid && pending.get(message.toolCallId) === message.toolName;
     pending.delete(message.toolCallId);
     next.pending = pending;
-  } else if (message.role === "user" && parent.pending.size !== 0) {
+  } else if ((message.role === "user" || message.role === "system") && parent.pending.size !== 0) {
     next.valid = false;
   }
   return next;
@@ -121,7 +122,10 @@ function assertReplay(entries: SessionEntry[], entryId: string): void {
         throw new Error("Target context contains an unmatched tool result.");
       }
       pending.delete(message.toolCallId);
-    } else if (pending.size !== 0 && (message.role === "user" || message.role === "custom")) {
+    } else if (
+      pending.size !== 0 &&
+      (message.role === "user" || message.role === "custom" || message.role === "system")
+    ) {
       throw new Error("Target context interrupts a tool batch.");
     }
   }
@@ -146,6 +150,15 @@ export function entryText(entry: SessionEntry, includeToolResults = false): stri
   }
   if (entry.type !== "message") return "";
   const { message } = entry;
+  if (message.role === "system") {
+    return [
+      renderSystemMessageUpdate(message),
+      ...(message.toolsAdded?.map((tool) => `[tool added: ${tool.name}]`) ?? []),
+      ...(message.toolsRemoved?.map((tool) => `[tool removed: ${tool.name}]`) ?? []),
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
   if (message.role === "assistant") {
     return message.content
       .map((block) => {

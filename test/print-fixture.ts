@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import {
   fauxAssistantMessage,
   fauxToolCall,
+  getCurrentSystemPrompt,
   type FauxResponseFactory,
 } from "@earendil-works/pi-ai";
 import { runPrintMode } from "@earendil-works/pi-coding-agent";
 import { HANDOFF_TYPE, lastCheckpoint } from "../src/history.ts";
-import { testRuntime } from "./runtime.ts";
+import { PROJECT_INSTRUCTIONS, SYSTEM_INSTRUCTIONS, testRuntime } from "./runtime.ts";
 
 const mode = process.argv[2] ?? "new";
 const outputMode = process.argv[3] === "json" ? "json" : "text";
@@ -24,6 +25,9 @@ const resume: FauxResponseFactory = (context) => {
     faux.appendResponses([resume]);
     return fauxAssistantMessage("Compaction summary");
   }
+  const prompt = getCurrentSystemPrompt(context.messages);
+  assert.ok(prompt.includes(SYSTEM_INSTRUCTIONS));
+  assert.ok(prompt.includes(PROJECT_INSTRUCTIONS));
   return fauxAssistantMessage("print-handoff-completed");
 };
 faux.setResponses([

@@ -295,3 +295,50 @@ test("an unsubmitted TUI editor draft prevents session replacement", async (cont
     await runtime.dispose();
   }
 });
+
+for (const mode of ["new", "fork"] as const) {
+  test(`${mode} respects an input handler that stops the replacement continuation`, async () => {
+    const { runtime, faux, errors } = await testRuntime((pi) => {
+      pi.on("input", (event) => {
+        if (
+          event.source === "extension" &&
+          event.text.startsWith("[Agent-authored continuation]")
+        ) {
+          return { action: "handled" };
+        }
+        return undefined;
+      });
+    });
+    try {
+      faux.setResponses([fauxAssistantMessage("Plan")]);
+      await runtime.session.prompt("Start");
+      const target = lastCheckpoint(runtime.session.sessionManager);
+      assert.ok(target);
+      const source = runtime.session.sessionId;
+      faux.setResponses([
+        fauxAssistantMessage(
+          fauxToolCall("session_handoff", {
+            expectedSessionId: source,
+            mode,
+            ...(mode === "fork" ? { targetEntryId: target.entry.id } : {}),
+            handoff: { kind: "inline", text: "Retain findings even if continuation is stopped" },
+          }),
+        ),
+      ]);
+      await runtime.session.prompt("Hand off");
+      assert.notEqual(runtime.session.sessionId, source);
+      assert.equal(faux.state.callCount, 2);
+      assert.equal(runtime.session.isIdle, true);
+      assert.equal(
+        runtime.session.sessionManager
+          .getBranch()
+          .filter((entry) => entry.type === "custom_message" && entry.customType === HANDOFF_TYPE)
+          .length,
+        1,
+      );
+      assert.deepEqual(errors, []);
+    } finally {
+      await runtime.dispose();
+    }
+  });
+}

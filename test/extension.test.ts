@@ -3,10 +3,12 @@ import { test } from "node:test";
 import {
   fauxAssistantMessage,
   fauxToolCall,
+  getCurrentSystemPrompt,
+  getCurrentTools,
   type FauxResponseFactory,
 } from "@earendil-works/pi-ai";
 import { CHECKPOINT_TYPE, HANDOFF_TYPE, lastCheckpoint } from "../src/history.ts";
-import { testRuntime, waitUntil } from "./runtime.ts";
+import { PROJECT_INSTRUCTIONS, SYSTEM_INSTRUCTIONS, testRuntime, waitUntil } from "./runtime.ts";
 
 test("real Pi emits non-triggering checkpoint metadata after a completed turn", async () => {
   const { runtime, faux, errors } = await testRuntime();
@@ -57,6 +59,8 @@ for (const mode of ["navigate", "fork", "new", "compact"] as const) {
           text: "The investigation is complete. Implement without schema changes.",
         },
       };
+      let resumedPrompt = "";
+      let resumedTools: string[] = [];
       const resume: FauxResponseFactory = (context) => {
         const text = JSON.stringify(context.messages);
         if (mode === "compact" && !text.includes("[Agent-authored session handoff]")) {
@@ -65,6 +69,10 @@ for (const mode of ["navigate", "fork", "new", "compact"] as const) {
         }
         assert.match(text, /Agent-authored session handoff/);
         assert.match(text, /without schema changes/);
+        resumedPrompt = getCurrentSystemPrompt(context.messages);
+        resumedTools = getCurrentTools(context.messages)
+          .map((tool) => tool.name)
+          .sort();
         return fauxAssistantMessage("Continued after handoff");
       };
       faux.setResponses([fauxAssistantMessage(fauxToolCall("session_handoff", input)), resume]);
@@ -79,6 +87,15 @@ for (const mode of ["navigate", "fork", "new", "compact"] as const) {
         ),
       );
       await runtime.session.waitForIdle();
+      assert.ok(
+        resumedPrompt.includes(SYSTEM_INSTRUCTIONS),
+        "Base instructions must survive handoff",
+      );
+      assert.ok(
+        resumedPrompt.includes(PROJECT_INSTRUCTIONS),
+        "Project instructions must survive handoff",
+      );
+      assert.deepEqual(resumedTools, ["session_handoff", "session_inspect"]);
       const branch = runtime.session.sessionManager.getBranch();
       const handoffs = branch.filter(
         (entry) => entry.type === "custom_message" && entry.customType === HANDOFF_TYPE,
@@ -98,7 +115,9 @@ for (const mode of ["navigate", "fork", "new", "compact"] as const) {
       }
       if (mode === "new") {
         const firstMessage = branch.find(
-          (entry) => entry.type === "message" || entry.type === "custom_message",
+          (entry) =>
+            (entry.type === "message" && entry.message.role !== "system") ||
+            entry.type === "custom_message",
         );
         assert.equal(firstMessage, handoffs[0]);
         assert.ok(!branch.some((entry) => entry.id === checkpoint.entry.id));
@@ -164,6 +183,60 @@ for (const mode of ["new", "fork"] as const) {
       ]);
       await runtime.session.prompt("Hand off");
       assert.equal(observed, true);
+    } finally {
+      await runtime.dispose();
+    }
+  });
+}
+
+for (const mode of ["new", "fork"] as const) {
+  test(`${mode} prepares current prompt sections and tool changes before its first continuation`, async () => {
+    let phase = "initial";
+    const inputs: string[] = [];
+    const { runtime, faux, errors } = await testRuntime((pi) => {
+      pi.on("input", (event) => {
+        if (event.source === "extension") inputs.push(event.text);
+      });
+      pi.on("before_agent_start", (event) => {
+        event.systemPromptOptions.sections["session_tools_test"] = `Policy phase: ${phase}`;
+        if (event.prompt.includes("[Agent-authored continuation]")) {
+          event.systemPromptOptions.selectedTools = event.systemPromptOptions.selectedTools.filter(
+            (name) => name !== "session_inspect",
+          );
+        }
+      });
+    });
+    try {
+      faux.setResponses([fauxAssistantMessage("Initial checkpoint")]);
+      await runtime.session.prompt("Start");
+      const checkpoint = lastCheckpoint(runtime.session.sessionManager);
+      assert.ok(checkpoint);
+      phase = "current";
+      let prompt = "";
+      let tools: string[] = [];
+      faux.setResponses([
+        fauxAssistantMessage(
+          fauxToolCall("session_handoff", {
+            expectedSessionId: runtime.session.sessionId,
+            mode,
+            ...(mode === "fork" ? { targetEntryId: checkpoint.entry.id } : {}),
+            handoff: { kind: "inline", text: "Carry current restrictions" },
+          }),
+        ),
+        (context) => {
+          prompt = getCurrentSystemPrompt(context.messages);
+          tools = getCurrentTools(context.messages).map((tool) => tool.name);
+          return fauxAssistantMessage("Resumed with current instructions");
+        },
+      ]);
+      await runtime.session.prompt("Hand off");
+      assert.match(prompt, /Policy phase: current/);
+      assert.doesNotMatch(prompt, /Policy phase: initial/);
+      assert.ok(prompt.includes(PROJECT_INSTRUCTIONS));
+      assert.deepEqual(tools, ["session_handoff"]);
+      assert.equal(inputs.length, 1);
+      assert.match(inputs[0] ?? "", /not a new user request or additional authorization/);
+      assert.deepEqual(errors, []);
     } finally {
       await runtime.dispose();
     }
