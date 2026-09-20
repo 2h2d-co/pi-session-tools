@@ -4,6 +4,11 @@ All notable changes are documented here using Keep a Changelog.
 
 ## Unreleased
 
+### Changed
+
+- Releases are cut by the tag workflow: it stages the signed package on npm through trusted
+  publishing and creates the immutable GitHub release from this changelog section.
+
 ## 0.0.1 - 2026-09-20
 
 ### Added
