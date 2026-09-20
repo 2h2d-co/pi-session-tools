@@ -2,4 +2,4 @@ from_latest_tag = true
 ignore_merge_commits = true
 
 [commit_types]
-release = {}
+release = { changelog_title = "Releases", omit_from_changelog = true }

@@ -1,6 +1,6 @@
 {
   "name": "@2h2d/pi-session-tools",
-  "version": "0.0.1-alpha.0",
+  "version": "0.0.1",
   "description": "Checkpoint inspection and context handoffs for Pi coding agents",
   "keywords": [
     "pi-package"

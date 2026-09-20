@@ -27,8 +27,7 @@ mise exec -- pi -e ./extensions/index.ts
 This does not change your Pi configuration. Keep other extensions enabled,
 including any required provider or system-prompt extensions.
 
-The npm package name is **`@2h2d/pi-session-tools`**. It is not yet published.
-After a release, installation will be:
+Install **`@2h2d/pi-session-tools`** from npm:
 
 ```sh
 pi install npm:@2h2d/pi-session-tools

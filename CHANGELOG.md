@@ -4,6 +4,8 @@ All notable changes are documented here using Keep a Changelog.
 
 ## Unreleased
 
+## 0.0.1 - 2026-09-20
+
 ### Added
 
 - Automatic turn-boundary checkpoints with bounded history inspection.
