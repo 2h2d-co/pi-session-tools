@@ -4,6 +4,8 @@ All notable changes are documented here using Keep a Changelog.
 
 ## Unreleased
 
+## 0.0.2 - 2026-09-22
+
 ### Changed
 
 - Require Pi 0.87.0 or later and validate against Pi 0.87.0. Older runtimes report an
@@ -11,8 +13,6 @@ All notable changes are documented here using Keep a Changelog.
 - Project checkpoint markers through Pi's `context_with_system` event so mid-conversation
   prompt and tool updates stay in place instead of being folded into the leading system
   message on every request.
-- Releases are cut by the tag workflow: it stages the signed package on npm through trusted
-  publishing and creates the immutable GitHub release from this changelog section.
 
 ### Fixed
 

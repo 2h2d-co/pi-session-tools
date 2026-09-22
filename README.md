@@ -236,6 +236,11 @@ scripted provider. They exercise tree boundaries, compaction, fresh runtime
 replacement, cancellation, input races, restart recovery, and actual print/JSON
 hosts. No real provider requests or live user sessions are needed.
 
+Before releasing, run `mise run test:live` with an existing Pi Codex login.
+It packs the extension and exercises inspection, all four handoff modes, automatic
+continuation, and source-history preservation through the shipped Pi 0.87.0 CLI.
+The test uses synthetic conversations and isolated sessions. It makes billed requests.
+
 `.github/npm-package-files` defines the expected npm package contents. CI checks
 types, formatting, lint, repository hygiene, secrets, workflows, tests,
 dependency audit, and package contents.
@@ -247,7 +252,8 @@ Release flow:
 1. Run `npm run release -- X.Y.Z` from a clean, synchronized `main`. It refuses to
    continue unless `CHANGELOG.md` has a non-empty section for the version
    (`Unreleased` for prereleases).
-2. The release command packs the package from the staged Git index, records its
+2. The release command packs the package from the staged Git index, requires its
+   live packaged-CLI test to pass, records its
    SHA-256 in the SSH-signed release commit, rebuilds the commit to prove
    reproducibility, and creates a lightweight `vX.Y.Z` tag.
 3. Inspect the commit and tag, then push them atomically with
