@@ -44,8 +44,13 @@ interface Request {
   applying: boolean;
   signal?: AbortSignal;
   command: string;
-  completion: Promise<void>;
-  finish: () => void;
+}
+
+const REQUIRED_PI = "Pi 0.87.0 or later";
+
+/** Pi 0.87 made the session projection canonical; older runtimes lack it. */
+function supportedRuntime(ctx: ExtensionContext): boolean {
+  return typeof ctx.sessionManager.buildSessionProjection === "function";
 }
 
 function operationId(entry: SessionEntry): string | undefined {
@@ -160,13 +165,18 @@ export default function sessionTools(pi: ExtensionAPI): void {
       record(request, replaced ? "replaced" : "interrupted", {
         ...(event.targetSessionFile ? { destinationSessionFile: event.targetSessionFile } : {}),
       });
-      if (!replaced) request.finish();
     }
     pending = undefined;
     epoch++;
   });
   pi.on("session_start", (_event, ctx) => {
     pending = undefined;
+    if (!supportedRuntime(ctx)) {
+      ctx.ui.notify(
+        `pi-session-tools requires ${REQUIRED_PI}. Checkpoints and handoffs are disabled.`,
+        "error",
+      );
+    }
     recovery = journalSummary(ctx.sessionManager.getEntries())
       .filter((operation) =>
         ["accepted", "applying", "dispatched", "interrupted"].includes(operation.phase),
@@ -216,18 +226,25 @@ export default function sessionTools(pi: ExtensionAPI): void {
       pi.appendEntry(JOURNAL_TYPE, { operationId: id, phase: "delivered" });
     }
   });
-  pi.on("context", (event, ctx) => {
-    // Keep markers out of Agent.state.messages: Pi print mode expects its last
-    // actual message to be the assistant response. Project markers only at the
-    // provider boundary, where they neither trigger turns nor hide that response.
+  pi.on("context_with_system", (event, ctx) => {
+    // Keep markers out of the persisted transcript: Pi print mode expects its
+    // last actual message to be the assistant response. Project markers only at
+    // the provider boundary, where they neither trigger turns nor hide that
+    // response. The full-transcript event returns messages verbatim, so
+    // mid-conversation system messages stay in place; a changed `context`
+    // result would fold them into one leading message on every request.
+    if (!supportedRuntime(ctx)) return;
     const index = checkpoints(ctx.sessionManager.getEntries());
     const ids = new Map<string, string[]>();
-    for (const entry of ctx.sessionManager.buildContextEntries()) {
-      if (entry.type !== "message" || !index.has(entry.id)) continue;
-      const key = createHash("sha256").update(JSON.stringify(entry.message)).digest("hex");
-      const matches = ids.get(key) ?? [];
-      matches.push(entry.id);
-      ids.set(key, matches);
+    for (const entry of ctx.sessionManager.buildSessionProjection().entries) {
+      if (entry.sourceEntry.type !== "message" || !index.has(entry.sourceEntry.id)) continue;
+      // Hash the projected message so a content edit still matches its entry.
+      for (const message of entry.messages) {
+        const key = createHash("sha256").update(JSON.stringify(message)).digest("hex");
+        const matches = ids.get(key) ?? [];
+        matches.push(entry.sourceEntry.id);
+        ids.set(key, matches);
+      }
     }
     return {
       messages: event.messages.flatMap((message) => {
@@ -245,7 +262,7 @@ export default function sessionTools(pi: ExtensionAPI): void {
       }),
     };
   });
-  pi.on("agent_settled", async (_event, ctx) => {
+  pi.on("agent_settled", (_event, ctx) => {
     const request = pending;
     if (!request || request.applying || !ctx.isIdle()) return;
     const commands = pi
@@ -256,14 +273,14 @@ export default function sessionTools(pi: ExtensionAPI): void {
     if (commands.length !== 1 || commands[0]?.name !== request.command) {
       record(request, "failed", { error: "Internal handoff command changed before dispatch." });
       pending = undefined;
-      request.finish();
       ctx.ui.notify("Handoff stopped: internal command changed before dispatch.", "error");
       return;
     }
-    // This event is outside the active run. Dispatch via a command context and
-    // join its completion so print/JSON hosts cannot dispose the runtime early.
+    // This event is outside the active run. Pi 0.87 defers prompts sent from
+    // settled handlers until every handler returns, then runs them before it
+    // resolves idle waits, so print/JSON hosts cannot dispose the runtime early.
+    // Awaiting the command here would wait for work that cannot start.
     pi.sendUserMessage(`/${request.command} ${request.id}`, { expandPromptTemplates: true });
-    await request.completion;
   });
 
   pi.registerTool({
@@ -439,8 +456,6 @@ export default function sessionTools(pi: ExtensionAPI): void {
           { triggerTurn: false },
         );
         ctx.ui.notify(errorText(error), "error");
-      } finally {
-        request.finish();
       }
     },
   });
@@ -461,6 +476,7 @@ export default function sessionTools(pi: ExtensionAPI): void {
     async execute(toolCallId, input, signal, _update, ctx) {
       Value.Assert(handoffSchema, input);
       validateHandoff(input);
+      if (!supportedRuntime(ctx)) throw new Error(`session_handoff requires ${REQUIRED_PI}.`);
       if (pending) throw new Error("A handoff is already pending.");
       if (ctx.sessionManager.getSessionId() !== input.expectedSessionId) {
         throw new Error("Session ID does not match. Inspect the current session.");
@@ -491,11 +507,6 @@ export default function sessionTools(pi: ExtensionAPI): void {
         );
       if (commands.length !== 1)
         throw new Error("Internal handoff command is unavailable or ambiguous.");
-      let finish: (() => void) | undefined;
-      const completion = new Promise<void>((resolve) => {
-        finish = resolve;
-      });
-      if (!finish) throw new Error("Handoff completion was not initialized.");
       const request: Request = {
         id: randomUUID(),
         input,
@@ -505,8 +516,6 @@ export default function sessionTools(pi: ExtensionAPI): void {
         applying: false,
         ...(signal ? { signal } : {}),
         command: commands[0]?.name ?? APPLY_COMMAND,
-        completion,
-        finish,
       };
       record(request, "accepted", { input, prepared, assistantId });
       pending = request;

@@ -37,6 +37,40 @@ test("real Pi emits non-triggering checkpoint metadata after a completed turn", 
   }
 });
 
+test("checkpoint markers keep mid-conversation system messages in place", async () => {
+  let phase = "initial";
+  const { runtime, faux, errors } = await testRuntime((pi) => {
+    pi.on("before_agent_start", (event) => {
+      event.systemPromptOptions.sections["session_tools_test"] = `Policy phase: ${phase}`;
+    });
+  });
+  try {
+    faux.setResponses([fauxAssistantMessage("A completed response")]);
+    await runtime.session.prompt("Start");
+    const checkpoint = lastCheckpoint(runtime.session.sessionManager);
+    assert.ok(checkpoint);
+    phase = "current";
+    let systemMessages = 0;
+    let prompt = "";
+    faux.setResponses([
+      (context) => {
+        assert.match(JSON.stringify(context.messages), new RegExp(`entry=${checkpoint.entry.id}`));
+        systemMessages = context.messages.filter((message) => message.role === "system").length;
+        prompt = getCurrentSystemPrompt(context.messages);
+        return fauxAssistantMessage("Checkpoint is available");
+      },
+    ]);
+    await runtime.session.prompt("Continue");
+    // The section update is a second system message. A `context` result that
+    // changed the list would fold it into the leading message.
+    assert.equal(systemMessages, 2);
+    assert.match(prompt, /Policy phase: current/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await runtime.dispose();
+  }
+});
+
 for (const mode of ["navigate", "fork", "new", "compact"] as const) {
   test(`real Pi ${mode} appends one handoff after the operation and resumes`, async () => {
     const { runtime, faux, errors } = await testRuntime();

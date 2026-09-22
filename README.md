@@ -13,9 +13,11 @@ extension does not launch subagents or restore workspace files.
 
 ## Requirements and loading
 
-Tested with Pi **0.86.0** and Node.js **22.23.2**. The package requires Pi
-`>=0.86.0` and Node.js `>=22.19.0`. Later Pi versions are allowed by the peer
-range. Future breaking API changes may require an extension update.
+Tested with Pi **0.87.0** and Node.js **22.23.2**. The package requires Pi
+`>=0.87.0` and Node.js `>=22.19.0`. Later Pi versions are allowed by the peer
+range. Future breaking API changes may require an extension update. On an
+older Pi the extension reports an error at session start and `session_handoff`
+refuses to run.
 
 From this checkout:
 
@@ -52,10 +54,12 @@ return. Other branches and compacted-away checkpoints remain discoverable
 through `session_inspect`.
 
 Checkpoint IDs are persisted as extension entries. Markers are inserted into
-model context without modifying the stored assistant messages. This preserves
-Pi's text-mode final response and does not trigger additional model requests.
-If another extension rewrites a message before context projection, its marker
-may be omitted. The checkpoint remains available through inspection.
+model context through Pi's `context_with_system` event without modifying the
+stored assistant messages or the transcript's system messages. This preserves
+Pi's text-mode final response, keeps mid-conversation prompt and tool updates
+in place, and does not trigger additional model requests. If another
+extension rewrites a message before context projection, its marker may be
+omitted. The checkpoint remains available through inspection.
 
 Pi's portable extension API represents these as custom metadata messages,
 not developer-role messages. Static tool guidance explains their meaning.
@@ -173,12 +177,13 @@ finish. The initial result says **accepted**, not completed.
 
 1. Validate the request, destination, and absence of pending user input.
 2. Record the request and terminate the tool batch.
-3. At `agent_settled`, dispatch an internal command and wait for it.
+3. At `agent_settled`, dispatch an internal command.
 4. Navigate, fork, compact, or create the new session through Pi's public APIs.
 5. Append exactly one handoff after success and start the next agent run.
 
-The command completion is joined by the settled event so Pi's print and JSON
-hosts do not exit before the handoff completes. Forks and new sessions use Pi's
+Pi runs prompts sent from settled handlers after those handlers return and
+before it resolves idle waits, so its print and JSON hosts do not exit before
+the handoff completes. Forks and new sessions use Pi's
 fresh replacement context. Continuation starts after the host finishes its
 replacement action, so a late editor reset cannot erase a new draft.
 For forks and new sessions, the extension saves the handoff first, then submits
