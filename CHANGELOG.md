@@ -4,6 +4,8 @@ All notable changes are documented here using Keep a Changelog.
 
 ## Unreleased
 
+## 0.0.3 - 2026-09-23
+
 ### Fixed
 
 - On a Pi older than 0.87.0, the session-start notice names the disabled features:
