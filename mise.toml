@@ -16,12 +16,16 @@ zizmor = "1.29.0"
 [env]
 _.path = ["{{config_root}}/node_modules/.bin"]
 
+# Bind in-process Pi resources to the tested dependency for test tasks only. A global
+# PI_PACKAGE_DIR must not select another runtime's metadata; other Pi launches are unchanged.
 [tasks.check]
 description = "Run all non-writing validation"
+env = { PI_PACKAGE_DIR = "{{config_root}}/node_modules/@earendil-works/pi-coding-agent" }
 run = ["npm run check", "npm test", "npm audit", "npm run pack:dry"]
 
 [tasks.test]
 description = "Run behavioral tests"
+env = { PI_PACKAGE_DIR = "{{config_root}}/node_modules/@earendil-works/pi-coding-agent" }
 run = "npm test"
 
 [tasks.install]

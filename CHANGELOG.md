@@ -4,6 +4,12 @@ All notable changes are documented here using Keep a Changelog.
 
 ## Unreleased
 
+### Fixed
+
+- On a Pi older than 0.87.0, the session-start notice names the disabled features:
+  checkpoint markers and `session_handoff`. Checkpoint recording and `session_inspect`
+  remain available there.
+
 ## 0.0.2 - 2026-09-22
 
 ### Changed

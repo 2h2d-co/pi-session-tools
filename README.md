@@ -16,8 +16,9 @@ extension does not launch subagents or restore workspace files.
 Tested with Pi **0.87.0** and Node.js **22.23.2**. The package requires Pi
 `>=0.87.0` and Node.js `>=22.19.0`. Later Pi versions are allowed by the peer
 range. Future breaking API changes may require an extension update. On an
-older Pi the extension reports an error at session start and `session_handoff`
-refuses to run.
+older Pi the extension reports an error at session start, projects no checkpoint
+markers, and `session_handoff` refuses to run. Checkpoint recording and
+`session_inspect` remain available there.
 
 From this checkout:
 
@@ -234,12 +235,46 @@ mise run fmt
 Tests load the extension through Pi's real resource loader and use an offline
 scripted provider. They exercise tree boundaries, compaction, fresh runtime
 replacement, cancellation, input races, restart recovery, and actual print/JSON
-hosts. No real provider requests or live user sessions are needed.
+hosts. No real provider requests or live user sessions are needed. Offline tests
+also cover the release command with mocked child processes and the live test's
+archive selection.
+
+Run tests through the Mise tasks. `mise run test` and `mise run check` set
+`PI_PACKAGE_DIR` to `node_modules/@earendil-works/pi-coding-agent` for their
+child processes only, so the in-process Pi SDK reads the version, docs, and
+themes of the tested 0.87.0 dependency even when a global `PI_PACKAGE_DIR`
+selects another runtime. A test fails if a different package directory is in
+effect. Other Pi launches keep their own environment.
+
+### Live validation
 
 Before releasing, run `mise run test:live` with an existing Pi Codex login.
-It packs the extension and exercises inspection, all four handoff modes, automatic
-continuation, and source-history preservation through the shipped Pi 0.87.0 CLI.
-The test uses synthetic conversations and isolated sessions. It makes billed requests.
+It exercises inspection, all four handoff modes, automatic continuation, and
+source-history preservation through the shipped Pi 0.87.0 CLI. The test uses
+synthetic conversations and isolated sessions. It makes billed requests.
+
+Archive selection:
+
+- By default the test packs the current worktree into a temporary directory
+  with `npm pack` and tests that archive.
+- Set `PI_PACKAGE_ARCHIVE` to test a prepared archive instead. The release
+  command does this with the archive built from the staged index. A relative
+  path resolves against the current working directory.
+- A supplied value that is empty, missing, a directory, an empty file, or not
+  a gzip tar archive fails the test. The test never falls back to packing the
+  worktree when a value is supplied.
+- Every archive must contain exactly the files in `.github/npm-package-files`.
+
+Runtime selection:
+
+- The test runs `node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js`
+  by default. Set `PI_TEST_CLI_PATH` to another installed Pi `cli.js`.
+- Each CLI subprocess sets `PI_PACKAGE_DIR` to the selected executable's own
+  package directory, so an inherited override cannot mix metadata from another
+  runtime. The test requires the selected CLI to report `0.87.0`, the tested
+  version. The Mise task binds the in-process SDK to the same dependency.
+- The subprocess uses an isolated agent directory, `PI_OFFLINE=1`, and
+  `PI_TELEMETRY=0`. Your Pi configuration is not read or changed.
 
 `.github/npm-package-files` defines the expected npm package contents. CI checks
 types, formatting, lint, repository hygiene, secrets, workflows, tests,
@@ -252,20 +287,73 @@ Release flow:
 1. Run `npm run release -- X.Y.Z` from a clean, synchronized `main`. It refuses to
    continue unless `CHANGELOG.md` has a non-empty section for the version
    (`Unreleased` for prereleases).
-2. The release command packs the package from the staged Git index, requires its
-   live packaged-CLI test to pass, records its
-   SHA-256 in the SSH-signed release commit, rebuilds the commit to prove
-   reproducibility, and creates a lightweight `vX.Y.Z` tag.
-3. Inspect the commit and tag, then push them atomically with
+2. The release command bumps the version in `package.json` and
+   `package-lock.json`, stages those two files, and packs the package from the
+   staged Git index into a temporary archive.
+3. Before signing, it runs `mise run test:live` with `PI_PACKAGE_ARCHIVE` set
+   to that exact archive. The live test therefore validates the release
+   candidate itself, not a fresh pack of the worktree. A missing prerequisite,
+   such as an unavailable Codex login, or a failed test stops the release before
+   any commit or tag exists.
+4. It records the archive's SHA-256 in the SSH-signed `release: vX.Y.Z` commit,
+   rebuilds the package from the committed tree to prove reproducibility, and
+   creates a lightweight `vX.Y.Z` tag. The rebuild does not repeat the live
+   test.
+5. Inspect the commit and tag, then push them atomically with
    `git push --atomic origin main vX.Y.Z`.
-4. A read-only CI job validates the release notes, tests, packs, and inspects the
+6. A read-only CI job validates the release notes, tests, packs, and inspects the
    package without publishing credentials.
-5. A separate credentialed job verifies the signed commit and exact package digest
+7. A separate credentialed job verifies the signed commit and exact package digest
    before attesting and staging that archive through npm trusted publishing.
-6. A final job creates the immutable GitHub release for the tag from the same
+8. A final job creates the immutable GitHub release for the tag from the same
    verified archive, its checksum, and the version's `CHANGELOG.md` section.
-7. Approve the staged package on npmjs.com or with `npm stage approve <stage-id>`.
+9. Approve the staged package on npmjs.com or with `npm stage approve <stage-id>`.
 
 Stable versions use `latest`; prereleases derive a non-`latest` dist-tag such as
 `alpha` from their first prerelease identifier. Installing into a user's live Pi
 configuration remains a separate operation.
+
+### Recovery after a failed release
+
+The release command never undoes its own changes. Inspect first, then recover
+only what the failed attempt created. Do not run blanket `git restore`,
+`git reset`, or `git clean` commands.
+
+**Failure before the version bump** (not on `main`, dirty worktree, `HEAD`
+behind `origin/main`, existing tag, missing changelog section): nothing changed.
+Fix the reported condition and run the command again.
+
+**Failure during the version update or before the commit**: version changes can
+remain in `package.json` and `package-lock.json`. They are staged once the
+version update and `git add` succeed. Package validation, live-test, and signing
+failures then leave them staged. No release commit or tag was created by this
+attempt. Inspect the state:
+
+```sh
+git status --short
+git diff -- package.json package-lock.json
+git diff --cached -- package.json package-lock.json
+```
+
+Undo only this attempt's version edits in the worktree and index. Preserve
+concurrent changes, including edits in those same files. Do not stage whole
+files containing unrelated edits. Rerun the release only after the cause is
+fixed and `main` is clean and synchronized.
+
+**Failure after the commit** (commit verification, reproducibility mismatch, or
+tag checks): a local signed `release: vX.Y.Z` commit exists on `main`, and a
+local `vX.Y.Z` tag may exist. Do not push that commit or tag, and do not rerun
+the release command. Inspect the state:
+
+```sh
+git log -1 --format='%H %s%n%(trailers:key=Npm-Artifact-SHA256)'
+git show --stat HEAD
+git tag --points-at HEAD
+git status --short
+```
+
+Removing the local release commit or tag changes local refs. Confirm the refs
+were never pushed, record their hashes and a recovery path, and obtain explicit
+approval before changing them. Never replace a published tag. Fix the cause,
+for example a non-deterministic package build, and start a new release from a
+clean, synchronized `main`.

@@ -47,6 +47,8 @@ interface Request {
 }
 
 const REQUIRED_PI = "Pi 0.87.0 or later";
+/** Only the features that check `supportedRuntime` are disabled on an older Pi. */
+const UNSUPPORTED_RUNTIME_NOTICE = `pi-session-tools requires ${REQUIRED_PI}. Checkpoint markers and session_handoff are disabled. Checkpoint recording and session_inspect remain available.`;
 
 /** Pi 0.87 made the session projection canonical; older runtimes lack it. */
 function supportedRuntime(ctx: ExtensionContext): boolean {
@@ -172,10 +174,7 @@ export default function sessionTools(pi: ExtensionAPI): void {
   pi.on("session_start", (_event, ctx) => {
     pending = undefined;
     if (!supportedRuntime(ctx)) {
-      ctx.ui.notify(
-        `pi-session-tools requires ${REQUIRED_PI}. Checkpoints and handoffs are disabled.`,
-        "error",
-      );
+      ctx.ui.notify(UNSUPPORTED_RUNTIME_NOTICE, "error");
     }
     recovery = journalSummary(ctx.sessionManager.getEntries())
       .filter((operation) =>

@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { HANDOFF_TYPE, lastCheckpoint } from "../src/history.ts";
+import { archiveEntries, expectedArchiveEntries, packageArchive } from "./package-archive.ts";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 
@@ -26,25 +27,9 @@ test(
     assert.ok(token, "PI_SESSION_TOOLS_LIVE_API_KEY is required.");
     const temporary = await mkdtemp(join(tmpdir(), "session-tools-live-"));
     t.after(() => rm(temporary, { recursive: true, force: true }));
-    let archive = process.env["PI_PACKAGE_ARCHIVE"];
-    if (!archive) {
-      await exec(
-        "npm",
-        ["pack", "--ignore-scripts", "--allow-directory=all", "--pack-destination", temporary],
-        { cwd: root },
-      );
-      const archives = (await readdir(temporary)).filter((file) => file.endsWith(".tgz"));
-      assert.equal(archives.length, 1);
-      const filename = archives[0];
-      assert.ok(filename);
-      archive = join(temporary, filename);
-    }
-    const { stdout: listing } = await exec("tar", ["-tzf", archive]);
-    const expected = (await readFile(join(root, ".github/npm-package-files"), "utf8"))
-      .trim()
-      .split("\n")
-      .map((file) => `package/${file}`);
-    assert.deepEqual(listing.trim().split("\n").sort(), expected.sort());
+    // A release passes its exact staged-index archive; otherwise pack this worktree.
+    const archive = await packageArchive(root, temporary, process.env["PI_PACKAGE_ARCHIVE"]);
+    assert.deepEqual(await archiveEntries(archive), await expectedArchiveEntries(root));
     await exec("tar", ["-xzf", archive, "-C", temporary]);
     const cli = await realpath(
       process.env["PI_TEST_CLI_PATH"] ??
@@ -55,6 +40,7 @@ test(
     const env = {
       ...process.env,
       PI_CODING_AGENT_DIR: agent,
+      // Bind Pi's package resources to the selected executable, not an inherited override.
       PI_PACKAGE_DIR: resolve(dirname(cli), "../.."),
       PI_OFFLINE: "1",
       PI_TELEMETRY: "0",
