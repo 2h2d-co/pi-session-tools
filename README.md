@@ -14,11 +14,8 @@ extension does not launch subagents or restore workspace files.
 ## Requirements and loading
 
 Tested with Pi **0.99.1** and Node.js **22.23.2**. The package requires Pi
-`>=0.87.0` and Node.js `>=22.19.0`. Later Pi versions are allowed by the peer
-range. Future breaking API changes may require an extension update. On an
-older Pi the extension reports an error at session start, projects no checkpoint
-markers, and `session_handoff` refuses to run. Checkpoint recording and
-`session_inspect` remain available there.
+`>=0.99.1` and Node.js `>=22.19.0`. Later Pi versions are allowed by the peer
+range. Future breaking API changes may require an extension update.
 
 From this checkout:
 

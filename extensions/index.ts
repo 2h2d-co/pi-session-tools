@@ -46,15 +46,6 @@ interface Request {
   command: string;
 }
 
-const REQUIRED_PI = "Pi 0.87.0 or later";
-/** Only the features that check `supportedRuntime` are disabled on an older Pi. */
-const UNSUPPORTED_RUNTIME_NOTICE = `pi-session-tools requires ${REQUIRED_PI}. Checkpoint markers and session_handoff are disabled. Checkpoint recording and session_inspect remain available.`;
-
-/** Pi 0.87 made the session projection canonical; older runtimes lack it. */
-function supportedRuntime(ctx: ExtensionContext): boolean {
-  return typeof ctx.sessionManager.buildSessionProjection === "function";
-}
-
 function operationId(entry: SessionEntry): string | undefined {
   const data: unknown =
     entry.type === "custom"
@@ -173,9 +164,6 @@ export default function sessionTools(pi: ExtensionAPI): void {
   });
   pi.on("session_start", (_event, ctx) => {
     pending = undefined;
-    if (!supportedRuntime(ctx)) {
-      ctx.ui.notify(UNSUPPORTED_RUNTIME_NOTICE, "error");
-    }
     recovery = journalSummary(ctx.sessionManager.getEntries())
       .filter((operation) =>
         ["accepted", "applying", "dispatched", "interrupted"].includes(operation.phase),
@@ -232,7 +220,6 @@ export default function sessionTools(pi: ExtensionAPI): void {
     // response. The full-transcript event returns messages verbatim, so
     // mid-conversation system messages stay in place; a changed `context`
     // result would fold them into one leading message on every request.
-    if (!supportedRuntime(ctx)) return;
     const index = checkpoints(ctx.sessionManager.getEntries());
     const ids = new Map<string, string[]>();
     for (const entry of ctx.sessionManager.buildSessionProjection().entries) {
@@ -275,7 +262,7 @@ export default function sessionTools(pi: ExtensionAPI): void {
       ctx.ui.notify("Handoff stopped: internal command changed before dispatch.", "error");
       return;
     }
-    // This event is outside the active run. Pi 0.87 defers prompts sent from
+    // This event is outside the active run. Pi defers prompts sent from
     // settled handlers until every handler returns, then runs them before it
     // resolves idle waits, so print/JSON hosts cannot dispose the runtime early.
     // Awaiting the command here would wait for work that cannot start.
@@ -475,7 +462,6 @@ export default function sessionTools(pi: ExtensionAPI): void {
     async execute(toolCallId, input, signal, _update, ctx) {
       Value.Assert(handoffSchema, input);
       validateHandoff(input);
-      if (!supportedRuntime(ctx)) throw new Error(`session_handoff requires ${REQUIRED_PI}.`);
       if (pending) throw new Error("A handoff is already pending.");
       if (ctx.sessionManager.getSessionId() !== input.expectedSessionId) {
         throw new Error("Session ID does not match. Inspect the current session.");

@@ -4,6 +4,10 @@ All notable changes are documented here using Keep a Changelog.
 
 ## Unreleased
 
+### Changed
+
+- Require Pi 0.99.1 or later. The reduced mode for Pi versions before 0.87.0 is removed.
+
 ## 0.0.4 - 2026-09-30
 
 ### Changed

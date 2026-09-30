@@ -1,8 +1,9 @@
 # Pi session tools
 
 - This package exposes `session_inspect` and `session_handoff`.
-- Support Pi 0.87.0 and later. Keep Pi peer ranges open-ended from that minimum
-  and pin development dependencies to the version actually tested.
+- Support Pi 0.99.1 and later. Keep Pi peer ranges open-ended from that minimum
+  and pin development dependencies to the version actually tested. Do not keep
+  fallbacks for Pi versions below the minimum.
 - Test system instructions and tool declarations at the provider boundary.
   Replacement continuations must enter Pi's normal prompt preparation path.
 - Use the public Pi extension API. Do not mutate session JSONL or runtime internals.
