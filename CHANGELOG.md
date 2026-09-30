@@ -4,6 +4,8 @@ All notable changes are documented here using Keep a Changelog.
 
 ## Unreleased
 
+## 0.0.4 - 2026-09-30
+
 ### Changed
 
 - Validate releases against Pi 0.99.1. Pi 0.87.0 and newer remain supported.
