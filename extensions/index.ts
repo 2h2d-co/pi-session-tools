@@ -7,6 +7,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { truncateHead } from "@earendil-works/pi-coding-agent";
 import { Value } from "typebox/value";
+import { requirePiVersion } from "../src/pi-version.ts";
 import {
   CHECKPOINT_TYPE,
   HANDOFF_TYPE,
@@ -100,6 +101,7 @@ function assertSoleCall(ctx: ExtensionContext, toolCallId: string): string {
 }
 
 export default function sessionTools(pi: ExtensionAPI): void {
+  requirePiVersion("pi-session-tools");
   let pending: Request | undefined;
   let epoch = 0;
   let recovery: string[] = [];

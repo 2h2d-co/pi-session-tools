@@ -68,7 +68,9 @@ const checkpointList = Type.Object(
           parentCheckpointId: nullableEntryId,
           timestamp: Type.String(),
           role: Type.String(),
-          label: Type.Union([Type.String(), Type.Null()]),
+          label: Type.Union([Type.String(), Type.Null()], {
+            description: "First 240 characters of the checkpoint label.",
+          }),
           preview: Type.String({ description: "First 240 characters of the checkpoint text." }),
           relation: StringEnum(["self", "ancestor", "descendant", "other-branch"]),
           retained: Type.Boolean(),

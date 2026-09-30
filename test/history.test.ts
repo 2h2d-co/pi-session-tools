@@ -119,6 +119,15 @@ test("tree discovery preserves inactive branches, parent checkpoints, and labels
   assert.equal(sm.getLeafId(), active);
   const children = readObject(inspectSession(sm, { view: "children", entryId: root }));
   assert.equal(children["total"], 2);
+
+  // Labels have no length limit, so inspection returns only their start.
+  sm.appendLabelChange(abandoned, `retry-evidence ${"x".repeat(128_000)}`);
+  const long = readObject(inspectSession(sm, { view: "search", query: "retry-evidence" }));
+  assert.equal(long["total"], 1);
+  const found: unknown = long["checkpoints"];
+  assert.ok(Array.isArray(found));
+  const labelled: unknown = found[0];
+  assert.equal(readObject(labelled)["label"], `retry-evidence ${"x".repeat(225)}`);
 });
 
 test("pagination has a stable snapshot and rejects mismatched queries", () => {

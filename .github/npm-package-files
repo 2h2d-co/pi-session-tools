@@ -5,4 +5,5 @@ extensions/index.ts
 package.json
 src/handoff.ts
 src/history.ts
+src/pi-version.ts
 src/schemas.ts

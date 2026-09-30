@@ -15,7 +15,9 @@ extension does not launch subagents or restore workspace files.
 
 Tested with Pi **0.99.1** and Node.js **22.23.2**. The package requires Pi
 `>=0.99.1` and Node.js `>=22.19.0`. Later Pi versions are allowed by the peer
-range. Future breaking API changes may require an extension update.
+range. Future breaking API changes may require an extension update. The extension
+refuses to load on a Pi older than 0.99.1, because Pi does not enforce the peer
+range when it installs packages.
 
 **Pi's virtual models are not supported.** Pi's experimental virtual models,
 registered with `pi.registerVirtualModel()`, are not tested with this package.
@@ -92,13 +94,14 @@ not developer-role messages. Static tool guidance explains their meaning.
 
 Responses include the current session and entry IDs, checkpoint relationships,
 labels, previews, approximate context token counts, and recent operation phases.
+Labels and previews are cut to their first 240 characters.
 Token counts estimate serialized message characters divided by four. They are
 not provider usage measurements.
 
 Repeat the same arguments with `nextCursor` as `cursor` to continue a page.
 Pagination uses a fixed snapshot even when subsequent turns add entries.
-Reading returns up to 8,000 text characters per page. Total output is capped at
-48,000 bytes. Reduce page or neighbor limits if the output reports truncation.
+Reading returns up to 8,000 text characters per page. Model-facing text is
+capped at 48,000 bytes. Reduce page or neighbor limits if the output reports truncation.
 Thinking blocks, image data, and tool-call arguments are never returned.
 Tool output is opt-in and can contain sensitive source material.
 

@@ -289,7 +289,7 @@ export function inspectSession(
       parentCheckpointId: checkpoint.parentCheckpointId,
       timestamp: entry.timestamp,
       role: entry.message.role,
-      label: manager.getLabel(entry.id) ?? null,
+      label: manager.getLabel(entry.id)?.slice(0, 240) ?? null,
       preview: entryText(entry, input.includeToolResults).slice(0, 240),
       relation:
         entry.id === cursor.anchorId
