@@ -4,11 +4,13 @@ All notable changes are documented here using Keep a Changelog.
 
 ## Unreleased
 
+## 0.0.5 - 2026-09-30
+
 ### Added
 
 - `session_inspect` declares an output schema and returns structured content, so scripts run by
-  Pi's `codemode` tool receive the full page as an object. It is annotated read-only and
-  closed-world.
+  Pi's `codemode` tool receive the full page as an object. Checkpoint labels and previews are
+  cut to their first 240 characters. It is annotated read-only and closed-world.
 - `session_handoff` is annotated as non-destructive and closed-world.
 
 ### Changed
