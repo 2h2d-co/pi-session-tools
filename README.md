@@ -17,6 +17,9 @@ Tested with Pi **0.99.1** and Node.js **22.23.2**. The package requires Pi
 `>=0.99.1` and Node.js `>=22.19.0`. Later Pi versions are allowed by the peer
 range. Future breaking API changes may require an extension update.
 
+**Pi's virtual models are not supported.** Pi's experimental virtual models,
+registered with `pi.registerVirtualModel()`, are not tested with this package.
+
 From this checkout:
 
 ```sh
