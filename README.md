@@ -101,6 +101,11 @@ Tool output is opt-in and can contain sensitive source material.
 
 Inspection does not navigate or search other session files.
 
+The tool is annotated read-only and closed-world. It declares an output schema,
+so scripts run by Pi's `codemode` tool receive the response as an object
+instead of text. That object is never truncated. Pagination still bounds its
+size.
+
 ## `session_handoff`
 
 Every call includes the current `expectedSessionId` and one handoff:
@@ -130,6 +135,12 @@ tool calls, user messages, and arbitrary metadata entries are rejected.
 
 `compactionInstructions` is allowed only for `compact`. It guides the summarizer.
 It is **not** the post-compaction handoff.
+
+The tool is `model-only`. Scripts run by Pi's `codemode` tool cannot see or
+call it, because a call from a script can never be the sole tool call of an
+assistant message. It is annotated as not read-only, not destructive, not
+idempotent, and closed-world. Handoffs append entries or create sessions and
+never delete source history.
 
 ### Inline handoff
 
@@ -247,7 +258,9 @@ effect. Other Pi launches keep their own environment.
 
 Before releasing, run `mise run test:live` with an existing Pi Codex login.
 It exercises inspection, all four handoff modes, automatic continuation, and
-source-history preservation through the shipped Pi 0.99.1 CLI. The test uses
+source-history preservation through the shipped Pi 0.99.1 CLI. A separate
+test loads Pi's built-in `codemode` extension. It checks that a script receives
+a structured `session_inspect` response and cannot reach `session_handoff`. The test uses
 synthetic conversations and isolated sessions. It makes billed requests.
 
 Archive selection:

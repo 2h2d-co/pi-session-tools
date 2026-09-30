@@ -4,8 +4,17 @@ All notable changes are documented here using Keep a Changelog.
 
 ## Unreleased
 
+### Added
+
+- `session_inspect` declares an output schema and returns structured content, so scripts run by
+  Pi's `codemode` tool receive the full page as an object. It is annotated read-only and
+  closed-world.
+- `session_handoff` is annotated as non-destructive and closed-world.
+
 ### Changed
 
+- `session_handoff` is `model-only`. `codemode` scripts no longer see or call it, because a call
+  from a script could never pass its sole-call check.
 - Require Pi 0.99.1 or later. The reduced mode for Pi versions before 0.87.0 is removed.
 
 ## 0.0.4 - 2026-09-30

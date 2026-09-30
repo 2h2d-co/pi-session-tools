@@ -6,7 +6,7 @@ import {
   type SessionEntry,
   type SessionMessageEntry,
 } from "@earendil-works/pi-coding-agent";
-import type { InspectInput } from "./schemas.ts";
+import type { InspectHistory, InspectInput } from "./schemas.ts";
 
 type ReadonlySessionManager = ExtensionContext["sessionManager"];
 
@@ -254,7 +254,10 @@ function nextCursor(cursor: Cursor, offset: number): string {
   return Buffer.from(JSON.stringify({ ...cursor, offset })).toString("base64url");
 }
 
-export function inspectSession(manager: ReadonlySessionManager, input: InspectInput): unknown {
+export function inspectSession(
+  manager: ReadonlySessionManager,
+  input: InspectInput,
+): InspectHistory {
   if (input.view === "search" && !input.query?.trim()) {
     throw new Error("Search requires query.");
   }

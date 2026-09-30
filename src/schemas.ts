@@ -42,7 +42,82 @@ export const handoffSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const nullableEntryId = Type.Union([Type.String(), Type.Null()]);
+const nextCursor = Type.Union([Type.String(), Type.Null()], {
+  description: "Pass as cursor with the same query for the next page; null on the last page.",
+});
+const neighbor = Type.Object(
+  { entryId: Type.String(), preview: Type.String() },
+  { additionalProperties: false },
+);
+const inspectCommon = {
+  sessionId: Type.String(),
+  activeEntryId: nullableEntryId,
+  anchorEntryId: nullableEntryId,
+  tokenEstimate: Type.String(),
+};
+
+const checkpointList = Type.Object(
+  {
+    ...inspectCommon,
+    checkpoints: Type.Array(
+      Type.Object(
+        {
+          entryId: Type.String(),
+          parentEntryId: nullableEntryId,
+          parentCheckpointId: nullableEntryId,
+          timestamp: Type.String(),
+          role: Type.String(),
+          label: Type.Union([Type.String(), Type.Null()]),
+          preview: Type.String({ description: "First 240 characters of the checkpoint text." }),
+          relation: StringEnum(["self", "ancestor", "descendant", "other-branch"]),
+          retained: Type.Boolean(),
+          canContinue: Type.Boolean(),
+          unavailableReason: Type.Union([Type.String(), Type.Null()]),
+          estimatedContextTokens: Type.Integer(),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    total: Type.Integer(),
+    nextCursor,
+  },
+  { additionalProperties: false, description: "overview, ancestors, children, and search views" },
+);
+
+const entryRead = Type.Object(
+  {
+    ...inspectCommon,
+    entryId: Type.String(),
+    type: Type.String(),
+    checkpoint: Type.Boolean(),
+    content: Type.String({ description: "At most 8000 characters of the entry text." }),
+    before: Type.Array(neighbor),
+    after: Type.Array(neighbor),
+    children: Type.Array(Type.String()),
+    childrenTruncated: Type.Boolean(),
+    nextCursor,
+  },
+  { additionalProperties: false, description: "read view" },
+);
+
+export const inspectOutputSchema = Type.Object(
+  {
+    history: Type.Union([checkpointList, entryRead]),
+    operations: Type.Array(
+      Type.Object(
+        { operationId: Type.String(), phase: Type.String() },
+        { additionalProperties: false },
+      ),
+      { description: "Latest phase of the last 10 handoff operations." },
+    ),
+  },
+  { additionalProperties: false },
+);
+
 export type InspectInput = Static<typeof inspectSchema>;
+export type InspectHistory = Static<typeof inspectOutputSchema>["history"];
+export type InspectOutput = Static<typeof inspectOutputSchema>;
 export type HandoffInput = Static<typeof handoffSchema>;
 
 export function validateHandoff(input: HandoffInput): void {

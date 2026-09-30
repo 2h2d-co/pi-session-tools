@@ -9,7 +9,9 @@ import {
 } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { Value } from "typebox/value";
 import { checkpoints, entryText, inspectSession, requireCheckpoint } from "../src/history.ts";
+import { inspectOutputSchema, type InspectInput } from "../src/schemas.ts";
 
 function readObject(value: unknown): Record<string, unknown> {
   assert.ok(typeof value === "object" && value !== null && !Array.isArray(value));
@@ -269,4 +271,32 @@ test("system updates and usage entries preserve checkpoints and compaction repla
   assert.equal(getCurrentSystemPrompt(replay), "Current policy");
   assert.deepEqual(getCurrentTools(replay), []);
   assert.match(JSON.stringify(inspectSession(sm, { view: "overview" })), /"canContinue":true/);
+});
+
+test("every inspection view matches the declared output schema", () => {
+  const sm = SessionManager.inMemory();
+  const root = sm.appendMessage(fauxAssistantMessage("Plan"));
+  const abandoned = sm.appendMessage(fauxAssistantMessage("Investigated retries"));
+  sm.appendLabelChange(abandoned, "retry-evidence");
+  sm.branch(root);
+  const active = sm.appendMessage(fauxAssistantMessage("Implement cache"));
+  const inputs: InspectInput[] = [
+    { view: "overview" },
+    { view: "overview", limit: 1 },
+    { view: "ancestors", entryId: active },
+    { view: "children", entryId: root },
+    { view: "search", query: "retry" },
+    { view: "read", entryId: abandoned },
+    { view: "read", entryId: root, before: 0, after: 0 },
+  ];
+  for (const input of inputs) {
+    const output = {
+      history: inspectSession(sm, input),
+      operations: [{ operationId: "operation", phase: "accepted" }],
+    };
+    assert.ok(
+      Value.Check(inspectOutputSchema, output),
+      `${JSON.stringify(input)}: ${JSON.stringify([...Value.Errors(inspectOutputSchema, output)])}`,
+    );
+  }
 });
