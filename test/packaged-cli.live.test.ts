@@ -47,7 +47,7 @@ test(
     };
     assert.equal(
       (await exec(process.execPath, [cli, "--version"], { env })).stdout.trim(),
-      "0.87.0",
+      "0.99.1",
     );
     await writeFile(
       join(agent, "models.json"),
@@ -186,7 +186,7 @@ test(
       assert.ok(
         assistant.content.some((block) => block.type === "text" && block.text.includes(marker)),
       );
-      t.diagnostic(`Pi 0.87.0: live ${mode} handoff and automatic continuation passed.`);
+      t.diagnostic(`Pi 0.99.1: live ${mode} handoff and automatic continuation passed.`);
     }
   },
 );

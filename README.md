@@ -13,7 +13,7 @@ extension does not launch subagents or restore workspace files.
 
 ## Requirements and loading
 
-Tested with Pi **0.87.0** and Node.js **22.23.2**. The package requires Pi
+Tested with Pi **0.99.1** and Node.js **22.23.2**. The package requires Pi
 `>=0.87.0` and Node.js `>=22.19.0`. Later Pi versions are allowed by the peer
 range. Future breaking API changes may require an extension update. On an
 older Pi the extension reports an error at session start, projects no checkpoint
@@ -242,7 +242,7 @@ archive selection.
 Run tests through the Mise tasks. `mise run test` and `mise run check` set
 `PI_PACKAGE_DIR` to `node_modules/@earendil-works/pi-coding-agent` for their
 child processes only, so the in-process Pi SDK reads the version, docs, and
-themes of the tested 0.87.0 dependency even when a global `PI_PACKAGE_DIR`
+themes of the tested 0.99.1 dependency even when a global `PI_PACKAGE_DIR`
 selects another runtime. A test fails if a different package directory is in
 effect. Other Pi launches keep their own environment.
 
@@ -250,7 +250,7 @@ effect. Other Pi launches keep their own environment.
 
 Before releasing, run `mise run test:live` with an existing Pi Codex login.
 It exercises inspection, all four handoff modes, automatic continuation, and
-source-history preservation through the shipped Pi 0.87.0 CLI. The test uses
+source-history preservation through the shipped Pi 0.99.1 CLI. The test uses
 synthetic conversations and isolated sessions. It makes billed requests.
 
 Archive selection:
@@ -271,7 +271,7 @@ Runtime selection:
   by default. Set `PI_TEST_CLI_PATH` to another installed Pi `cli.js`.
 - Each CLI subprocess sets `PI_PACKAGE_DIR` to the selected executable's own
   package directory, so an inherited override cannot mix metadata from another
-  runtime. The test requires the selected CLI to report `0.87.0`, the tested
+  runtime. The test requires the selected CLI to report `0.99.1`, the tested
   version. The Mise task binds the in-process SDK to the same dependency.
 - The subprocess uses an isolated agent directory, `PI_OFFLINE=1`, and
   `PI_TELEMETRY=0`. Your Pi configuration is not read or changed.

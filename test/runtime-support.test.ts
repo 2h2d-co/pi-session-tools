@@ -73,6 +73,7 @@ test("an older Pi disables only checkpoint markers and session_handoff", async (
       setLabel: unused("setLabel"),
       getActiveTools: () => [],
       getAllTools: () => [],
+      getSettings: unused("getSettings"),
       setActiveTools: unused("setActiveTools"),
       refreshTools: unused("refreshTools"),
       getCommands: () => [],
@@ -146,7 +147,7 @@ test("an older Pi disables only checkpoint markers and session_handoff", async (
     { view: "overview" },
     undefined,
     undefined,
-    runner.createContext(),
+    runner.createToolContext("inspect-call", undefined),
   );
   assert.match(JSON.stringify(inspection.content), new RegExp(id));
 
@@ -165,7 +166,7 @@ test("an older Pi disables only checkpoint markers and session_handoff", async (
       },
       undefined,
       undefined,
-      runner.createContext(),
+      runner.createToolContext("handoff-call", undefined),
     ),
     /session_handoff requires Pi 0\.87\.0 or later/,
   );
