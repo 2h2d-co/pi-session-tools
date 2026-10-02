@@ -40,7 +40,7 @@ description = "Format project files"
 run = "npm run fmt"
 
 [tasks."test:live"]
-description = "Verify packaged handoffs and codemode inspection through Pi 0.99.1 and live Codex"
+description = "Verify packaged handoffs and codemode inspection through Pi 1.0.0 and live Codex"
 run = '''
 export PI_PACKAGE_DIR="$PWD/node_modules/@earendil-works/pi-coding-agent"
 PI_SESSION_TOOLS_LIVE_API_KEY="$(./node_modules/.bin/pi auth print-bearer-token --provider openai-codex --model gpt-5.6-luna)" \

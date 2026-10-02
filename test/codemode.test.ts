@@ -46,7 +46,7 @@ test("codemode scripts receive structured inspections and cannot reach session_h
       "  kind: typeof inspected,",
       "  entryIds: inspected.history.checkpoints.map((item) => item.entryId),",
       "  operations: inspected.operations,",
-      "  handoff: typeof tools.session_handoff,",
+      '  handoff: "session_handoff" in tools,',
       "  listed: ALL_TOOLS.map((tool) => tool.name).toSorted(),",
       "});",
     ].join("\n");
@@ -67,7 +67,7 @@ test("codemode scripts receive structured inspections and cannot reach session_h
       kind: "object",
       entryIds: [checkpoint.entry.id],
       operations: [],
-      handoff: "undefined",
+      handoff: false,
       listed: ["session_inspect"],
     });
     assert.deepEqual(errors, []);

@@ -43,7 +43,7 @@ async function packagedCli(t: TestContext) {
     PI_OFFLINE: "1",
     PI_TELEMETRY: "0",
   };
-  assert.equal((await exec(process.execPath, [cli, "--version"], { env })).stdout.trim(), "0.99.1");
+  assert.equal((await exec(process.execPath, [cli, "--version"], { env })).stdout.trim(), "1.0.0");
   await writeFile(
     join(agent, "models.json"),
     JSON.stringify({
@@ -189,7 +189,7 @@ test(
       assert.ok(
         assistant.content.some((block) => block.type === "text" && block.text.includes(marker)),
       );
-      t.diagnostic(`Pi 0.99.1: live ${mode} handoff and automatic continuation passed.`);
+      t.diagnostic(`Pi 1.0.0: live ${mode} handoff and automatic continuation passed.`);
     }
   },
 );
@@ -208,7 +208,7 @@ test(
       "return JSON.stringify({",
       "  kind: typeof inspected,",
       "  session: inspected.history.sessionId,",
-      "  handoff: typeof tools.session_handoff,",
+      '  handoff: "session_handoff" in tools,',
       "  listed: ALL_TOOLS.map((tool) => tool.name).toSorted(),",
       "});",
     ].join("\n");
@@ -264,9 +264,9 @@ test(
     assert.deepEqual(JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)), {
       kind: "object",
       session: manager.getSessionId(),
-      handoff: "undefined",
+      handoff: false,
       listed: ["session_inspect"],
     });
-    t.diagnostic("Pi 0.99.1: live codemode script received structured session_inspect output.");
+    t.diagnostic("Pi 1.0.0: live codemode script received structured session_inspect output.");
   },
 );

@@ -4,6 +4,14 @@ All notable changes are documented here using Keep a Changelog.
 
 ## Unreleased
 
+## 0.0.6 - 2026-10-02
+
+### Changed
+
+- Require Pi 1.0.0 or later. `session_handoff` remains unavailable to codemode
+  scripts. Pi 1.0.0 throws when a script reads it, including
+  `typeof tools.session_handoff`. Check for it with `"session_handoff" in tools`.
+
 ## 0.0.5 - 2026-09-30
 
 ### Added

@@ -13,10 +13,10 @@ extension does not launch subagents or restore workspace files.
 
 ## Requirements and loading
 
-Tested with Pi **0.99.1** and Node.js **22.23.2**. The package requires Pi
-`>=0.99.1` and Node.js `>=22.19.0`. Later Pi versions are allowed by the peer
+Tested with Pi **1.0.0** and Node.js **22.23.2**. The package requires Pi
+`>=1.0.0` and Node.js `>=22.19.0`. Later Pi versions are allowed by the peer
 range. Future breaking API changes may require an extension update. The extension
-refuses to load on a Pi older than 0.99.1, because Pi does not enforce the peer
+refuses to load on a Pi older than 1.0.0, because Pi does not enforce the peer
 range when it installs packages.
 
 **Pi's virtual models are not supported.** Pi's experimental virtual models,
@@ -144,9 +144,12 @@ It is **not** the post-compaction handoff.
 
 The tool is `model-only`. Scripts run by Pi's `codemode` tool cannot see or
 call it, because a call from a script can never be the sole tool call of an
-assistant message. It is annotated as not read-only, not destructive, not
-idempotent, and closed-world. Handoffs append entries or create sessions and
-never delete source history.
+assistant message.
+Check its absence with `"session_handoff" in tools`. Pi 1.0.0 throws when a
+script reads an unavailable member, including `typeof tools.session_handoff`.
+
+It is annotated as not read-only, not destructive, not idempotent, and
+closed-world. Handoffs append entries or create sessions and never delete source history.
 
 ### Inline handoff
 
@@ -256,7 +259,7 @@ archive selection.
 Run tests through the Mise tasks. `mise run test` and `mise run check` set
 `PI_PACKAGE_DIR` to `node_modules/@earendil-works/pi-coding-agent` for their
 child processes only, so the in-process Pi SDK reads the version, docs, and
-themes of the tested 0.99.1 dependency even when a global `PI_PACKAGE_DIR`
+themes of the tested 1.0.0 dependency even when a global `PI_PACKAGE_DIR`
 selects another runtime. A test fails if a different package directory is in
 effect. Other Pi launches keep their own environment.
 
@@ -264,7 +267,7 @@ effect. Other Pi launches keep their own environment.
 
 Before releasing, run `mise run test:live` with an existing Pi Codex login.
 It exercises inspection, all four handoff modes, automatic continuation, and
-source-history preservation through the shipped Pi 0.99.1 CLI. A separate
+source-history preservation through the shipped Pi 1.0.0 CLI. A separate
 test loads Pi's built-in `codemode` extension. It checks that a script receives
 a structured `session_inspect` response and cannot reach `session_handoff`. The test uses
 synthetic conversations and isolated sessions. It makes billed requests.
@@ -287,7 +290,7 @@ Runtime selection:
   by default. Set `PI_TEST_CLI_PATH` to another installed Pi `cli.js`.
 - Each CLI subprocess sets `PI_PACKAGE_DIR` to the selected executable's own
   package directory, so an inherited override cannot mix metadata from another
-  runtime. The test requires the selected CLI to report `0.99.1`, the tested
+  runtime. The test requires the selected CLI to report `1.0.0`, the tested
   version. The Mise task binds the in-process SDK to the same dependency.
 - The subprocess uses an isolated agent directory, `PI_OFFLINE=1`, and
   `PI_TELEMETRY=0`. Your Pi configuration is not read or changed.
