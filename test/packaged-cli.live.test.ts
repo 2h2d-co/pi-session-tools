@@ -43,7 +43,7 @@ async function packagedCli(t: TestContext) {
     PI_OFFLINE: "1",
     PI_TELEMETRY: "0",
   };
-  assert.equal((await exec(process.execPath, [cli, "--version"], { env })).stdout.trim(), "1.0.0");
+  assert.equal((await exec(process.execPath, [cli, "--version"], { env })).stdout.trim(), "1.0.1");
   await writeFile(
     join(agent, "models.json"),
     JSON.stringify({
@@ -189,7 +189,7 @@ test(
       assert.ok(
         assistant.content.some((block) => block.type === "text" && block.text.includes(marker)),
       );
-      t.diagnostic(`Pi 1.0.0: live ${mode} handoff and automatic continuation passed.`);
+      t.diagnostic(`Pi 1.0.1: live ${mode} handoff and automatic continuation passed.`);
     }
   },
 );
@@ -267,6 +267,6 @@ test(
       handoff: false,
       listed: ["session_inspect"],
     });
-    t.diagnostic("Pi 1.0.0: live codemode script received structured session_inspect output.");
+    t.diagnostic("Pi 1.0.1: live codemode script received structured session_inspect output.");
   },
 );

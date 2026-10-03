@@ -4,6 +4,10 @@ All notable changes are documented here using Keep a Changelog.
 
 ## Unreleased
 
+### Changed
+
+- Require Pi 1.0.1 or later.
+
 ## 0.0.6 - 2026-10-02
 
 ### Changed

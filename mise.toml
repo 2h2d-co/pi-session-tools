@@ -22,10 +22,7 @@ _.path = ["{{config_root}}/node_modules/.bin"]
 [tasks.check]
 description = "Run all non-writing validation"
 env = { PI_PACKAGE_DIR = "{{config_root}}/node_modules/@earendil-works/pi-coding-agent" }
-# Temporary: Pi's npm-shrinkwrap pins brace-expansion 5.0.9 (GHSA-qhr7-859c-m2p7,
-# GHSA-6j4f-fj2g-mc7p, GHSA-q2hr-2g5m-vwhr) in the Pi development dependency. Restore the full
-# audit once a Pi release ships brace-expansion 5.0.12 or later.
-run = ["npm run check", "npm test", "npm audit --omit=dev", "npm run pack:dry"]
+run = ["npm run check", "npm test", "npm audit", "npm run pack:dry"]
 
 [tasks.test]
 description = "Run behavioral tests"
@@ -41,7 +38,7 @@ description = "Format project files"
 run = "npm run fmt"
 
 [tasks."test:live"]
-description = "Verify packaged handoffs and codemode inspection through Pi 1.0.0 and live Codex"
+description = "Verify packaged handoffs and codemode inspection through Pi 1.0.1 and live Codex"
 run = '''
 export PI_PACKAGE_DIR="$PWD/node_modules/@earendil-works/pi-coding-agent"
 PI_SESSION_TOOLS_LIVE_API_KEY="$(./node_modules/.bin/pi auth print-bearer-token --provider openai-codex --model gpt-5.6-luna)" \
