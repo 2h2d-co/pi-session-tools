@@ -28,7 +28,6 @@
   ],
   "type": "module",
   "scripts": {
-    "check": "hk check --all --check",
     "test": "env -u PI_PACKAGE_DIR node --test --test-concurrency=1 test/*.test.ts",
     "test:live": "node scripts/test-live.ts",
     "typecheck": "tsc --noEmit",
