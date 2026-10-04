@@ -258,7 +258,7 @@ archive selection.
 Run tests through the Mise tasks. `mise run test` and `mise run check` set
 `PI_PACKAGE_DIR` to `node_modules/@earendil-works/pi-coding-agent` for their
 child processes only, so the in-process Pi SDK reads the version, docs, and
-themes of the tested 1.0.1 dependency even when a global `PI_PACKAGE_DIR`
+themes of the tested Pi dependency even when a global `PI_PACKAGE_DIR`
 selects another runtime. A test fails if a different package directory is in
 effect. Other Pi launches keep their own environment.
 
@@ -266,7 +266,7 @@ effect. Other Pi launches keep their own environment.
 
 Before releasing, run `mise run test:live` with an existing Pi Codex login.
 It exercises inspection, all four handoff modes, automatic continuation, and
-source-history preservation through the shipped Pi 1.0.1 CLI. A separate
+source-history preservation through the shipped Pi CLI. A separate
 test loads Pi's built-in `codemode` extension. It checks that a script receives
 a structured `session_inspect` response and cannot reach `session_handoff`. The test uses
 synthetic conversations and isolated sessions. It makes billed requests.
@@ -289,8 +289,9 @@ Runtime selection:
   by default. Set `PI_TEST_CLI_PATH` to another installed Pi `cli.js`.
 - Each CLI subprocess sets `PI_PACKAGE_DIR` to the selected executable's own
   package directory, so an inherited override cannot mix metadata from another
-  runtime. The test requires the selected CLI to report `1.0.1`, the tested
-  version. The Mise task binds the in-process SDK to the same dependency.
+  runtime. The test requires the selected CLI to report the version of the
+  repository's Pi development dependency. The Mise task binds the in-process
+  SDK to the same dependency.
 - The subprocess uses an isolated agent directory, `PI_OFFLINE=1`, and
   `PI_TELEMETRY=0`. Your Pi configuration is not read or changed.
 

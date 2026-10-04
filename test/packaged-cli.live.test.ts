@@ -7,10 +7,12 @@ import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import manifest from "../package.json" with { type: "json" };
 import { HANDOFF_TYPE, lastCheckpoint } from "../src/history.ts";
 import { archiveEntries, expectedArchiveEntries, packageArchive } from "./package-archive.ts";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
+const piVersion = manifest.devDependencies["@earendil-works/pi-coding-agent"];
 
 function exec(command: string, args: string[], options: ExecFileOptions = {}) {
   const result = promisify(execFile)(command, args, { ...options, encoding: "utf8" });
@@ -43,7 +45,11 @@ async function packagedCli(t: TestContext) {
     PI_OFFLINE: "1",
     PI_TELEMETRY: "0",
   };
-  assert.equal((await exec(process.execPath, [cli, "--version"], { env })).stdout.trim(), "1.0.1");
+  assert.equal(
+    (await exec(process.execPath, [cli, "--version"], { env })).stdout.trim(),
+    piVersion,
+    "Live validation requires the Pi version pinned as the development dependency.",
+  );
   await writeFile(
     join(agent, "models.json"),
     JSON.stringify({
@@ -189,7 +195,7 @@ test(
       assert.ok(
         assistant.content.some((block) => block.type === "text" && block.text.includes(marker)),
       );
-      t.diagnostic(`Pi 1.0.1: live ${mode} handoff and automatic continuation passed.`);
+      t.diagnostic(`Pi ${piVersion}: live ${mode} handoff and automatic continuation passed.`);
     }
   },
 );
@@ -267,6 +273,8 @@ test(
       handoff: false,
       listed: ["session_inspect"],
     });
-    t.diagnostic("Pi 1.0.1: live codemode script received structured session_inspect output.");
+    t.diagnostic(
+      `Pi ${piVersion}: live codemode script received structured session_inspect output.`,
+    );
   },
 );
