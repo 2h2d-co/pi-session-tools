@@ -28,8 +28,8 @@ jobs:
           version: "2026.9.14"
           install_args: --locked
           cache: false
-      - name: Install dependencies
-        run: mise run install
+      - name: Install dependencies and Git hooks
+        run: mise run init
       - name: Validate
         env:
           GH_TOKEN: ${{ github.token }}

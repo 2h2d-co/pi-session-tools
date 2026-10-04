@@ -21,10 +21,6 @@ _.path = ["{{config_root}}/node_modules/.bin"]
 description = "Run all non-writing validation"
 run = ["npm run check", "npm test", "npm audit", "npm run pack:dry"]
 
-[tasks.install]
-description = "Install locked dependencies"
-run = "npm ci --ignore-scripts"
-
-[tasks.fmt]
-description = "Format project files"
-run = "npm run fmt"
+[tasks.init]
+description = "Install locked dependencies and Git hooks"
+run = ["npm ci --ignore-scripts", "hk install --mise"]

@@ -24,7 +24,7 @@ registered with `pi.registerVirtualModel()`, are not tested with this package.
 From this checkout:
 
 ```sh
-mise run install
+mise run init
 mise exec -- pi -e ./extensions/index.ts
 ```
 
@@ -242,10 +242,10 @@ in-memory request. It is not a recovery or manual-navigation command.
 ## Development
 
 ```sh
-mise run install
+mise run init
 npm test
 mise run check
-mise run fmt
+npm run fmt
 ```
 
 Tests load the extension through Pi's real resource loader and use an offline

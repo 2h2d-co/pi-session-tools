@@ -11,7 +11,7 @@
 - Keep inspection bounded and read-only. Never include thinking blocks.
 - Preserve source history. Never restore workspace files or automatically replay uncertain handoffs.
 - Keep handoff messages separate from summarizer instructions.
-- Run `mise run check` before committing. Use `mise run fmt` for formatting.
+- Run `mise run check` before committing. Use `npm run fmt` for formatting.
 - Behavioral tests use Node's built-in test runner and Pi's real session manager.
 - Keep `.github/npm-package-files` aligned with the packed files.
 - Maintain `CHANGELOG.md` in Keep a Changelog style; keep entries under `Unreleased` for prereleases and move them into a release section only for stable releases.
