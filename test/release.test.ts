@@ -60,7 +60,7 @@ async function runRelease(t: TestContext, scenario: Scenario): Promise<Outcome> 
     tagged: false,
     error: undefined,
   };
-  const spawnError = Object.assign(new Error("spawn mise ENOENT"), { code: "ENOENT" });
+  const spawnError = Object.assign(new Error("spawn node ENOENT"), { code: "ENOENT" });
   process.argv = [process.execPath, join(root, "scripts/release.ts"), version];
   process.env["npm_execpath"] = "synthetic-npm";
   // The script's success summary would read like a real release in the test output.
@@ -116,19 +116,19 @@ async function runRelease(t: TestContext, scenario: Scenario): Promise<Outcome> 
           stdout = JSON.stringify([
             { name: "@2h2d/pi-session-tools", version, filename, files: packageFiles },
           ]);
+        } else if (verb === "run") {
+          assert.deepEqual(args.slice(2), ["test:live"]);
+          const archive = options.env?.["PI_PACKAGE_ARCHIVE"];
+          outcome.liveRuns.push({
+            cwd: options.cwd,
+            archive,
+            contents: archive ? readFileSync(archive, "utf8") : "",
+          });
+          if (scenario.live === "spawn-error") {
+            error = spawnError;
+            status = null;
+          } else status = scenario.live ?? 0;
         } else throw new Error(`Unexpected npm command: ${operation}`);
-      } else if (command === "mise") {
-        assert.deepEqual(args, ["run", "test:live"]);
-        const archive = options.env?.["PI_PACKAGE_ARCHIVE"];
-        outcome.liveRuns.push({
-          cwd: options.cwd,
-          archive,
-          contents: archive ? readFileSync(archive, "utf8") : "",
-        });
-        if (scenario.live === "spawn-error") {
-          error = spawnError;
-          status = null;
-        } else status = scenario.live ?? 0;
       } else throw new Error(`Unexpected child command: ${operation}`);
       return {
         pid: 0,
@@ -193,8 +193,8 @@ test("release rejects an invalid version before any Git command", async (t) => {
 });
 
 for (const [name, live, message] of [
-  ["the live task cannot start", "spawn-error", /spawn mise ENOENT/],
-  ["the live task exits with a failure", 1, /mise run test:live exited with 1/],
+  ["the live test cannot start", "spawn-error", /spawn node ENOENT/],
+  ["the live test exits with a failure", 1, /synthetic-npm run test:live exited with 1/],
 ] as const) {
   test(`release leaves only staged version metadata when ${name}`, async (t) => {
     const outcome = await runRelease(t, { live });
@@ -222,7 +222,7 @@ test("release runs the live gate once against the exact staged archive before si
   assert.equal(outcome.liveRuns.length, 1);
   const [live] = outcome.liveRuns;
   assert.ok(live);
-  assert.equal(live.cwd, root, "The live task runs from the repository root.");
+  assert.equal(live.cwd, root, "The live test runs from the repository root.");
   assert.equal(live.archive, outcome.archives[0]);
   assert.ok(live.archive && !live.archive.startsWith(root), "The archive is a temporary file.");
   assert.equal(live.contents, candidate);
@@ -235,7 +235,7 @@ test("release runs the live gate once against the exact staged archive before si
     ),
   );
   assert.ok(outcome.calls.includes(`git tag v${releasedVersion}`));
-  const liveIndex = outcome.calls.indexOf("mise run test:live");
+  const liveIndex = outcome.calls.indexOf("npm run test:live");
   const commitIndex = outcome.calls.findIndex((call) => call.startsWith("git commit "));
   const rebuildIndex = outcome.calls.findLastIndex((call) =>
     call.startsWith("git checkout-index "),

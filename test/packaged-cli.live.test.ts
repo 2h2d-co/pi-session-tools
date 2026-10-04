@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFile, type ExecFileOptions } from "node:child_process";
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -40,8 +40,6 @@ async function packagedCli(t: TestContext) {
   const env = {
     ...process.env,
     PI_CODING_AGENT_DIR: agent,
-    // Bind Pi's package resources to the selected executable, not an inherited override.
-    PI_PACKAGE_DIR: resolve(dirname(cli), "../.."),
     PI_OFFLINE: "1",
     PI_TELEMETRY: "0",
   };

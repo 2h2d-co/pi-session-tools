@@ -243,7 +243,7 @@ in-memory request. It is not a recovery or manual-navigation command.
 
 ```sh
 mise run install
-mise run test
+npm test
 mise run check
 mise run fmt
 ```
@@ -255,16 +255,14 @@ hosts. No real provider requests or live user sessions are needed. Offline tests
 also cover the release command with mocked child processes and the live test's
 archive selection.
 
-Run tests through the Mise tasks. `mise run test` and `mise run check` set
-`PI_PACKAGE_DIR` to `node_modules/@earendil-works/pi-coding-agent` for their
-child processes only, so the in-process Pi SDK reads the version, docs, and
-themes of the tested Pi dependency even when a global `PI_PACKAGE_DIR`
-selects another runtime. A test fails if a different package directory is in
-effect. Other Pi launches keep their own environment.
+`npm test` and `npm run test:live` remove an inherited `PI_PACKAGE_DIR` from
+their test processes, so the in-process Pi SDK reads the version, docs, and
+themes of the tested Pi dependency. A test fails if a different package
+directory is in effect. Other Pi launches keep their own environment.
 
 ### Live validation
 
-Before releasing, run `mise run test:live` with an existing Pi Codex login.
+Before releasing, run `npm run test:live` with an existing Pi Codex login.
 It exercises inspection, all four handoff modes, automatic continuation, and
 source-history preservation through the shipped Pi CLI. A separate
 test loads Pi's built-in `codemode` extension. It checks that a script receives
@@ -287,11 +285,10 @@ Runtime selection:
 
 - The test runs `node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js`
   by default. Set `PI_TEST_CLI_PATH` to another installed Pi `cli.js`.
-- Each CLI subprocess sets `PI_PACKAGE_DIR` to the selected executable's own
-  package directory, so an inherited override cannot mix metadata from another
-  runtime. The test requires the selected CLI to report the version of the
-  repository's Pi development dependency. The Mise task binds the in-process
-  SDK to the same dependency.
+- `scripts/test-live.ts` reads the Codex bearer token through the repository
+  Pi's `pi auth print-bearer-token`. Each CLI subprocess resolves its own
+  package directory. The test requires the selected CLI to report the version
+  of the repository's Pi development dependency.
 - The subprocess uses an isolated agent directory, `PI_OFFLINE=1`, and
   `PI_TELEMETRY=0`. Your Pi configuration is not read or changed.
 
@@ -309,7 +306,7 @@ Release flow:
 2. The release command bumps the version in `package.json` and
    `package-lock.json`, stages those two files, and packs the package from the
    staged Git index into a temporary archive.
-3. Before signing, it runs `mise run test:live` with `PI_PACKAGE_ARCHIVE` set
+3. Before signing, it runs `npm run test:live` with `PI_PACKAGE_ARCHIVE` set
    to that exact archive. The live test therefore validates the release
    candidate itself, not a fresh pack of the worktree. A missing prerequisite,
    such as an unavailable Codex login, or a failed test stops the release before

@@ -9,8 +9,8 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const dependency = join(root, "node_modules/@earendil-works/pi-coding-agent");
 
 test("in-process tests use the repository's Pi dependency for package resources", async () => {
-  // The Mise test tasks bind PI_PACKAGE_DIR here so an inherited global override cannot
-  // select another runtime's version, docs, or themes for the SDK under test.
+  // npm test removes an inherited PI_PACKAGE_DIR so it cannot select another runtime's
+  // version, docs, or themes for the SDK under test.
   const manifest: unknown = JSON.parse(await readFile(join(dependency, "package.json"), "utf8"));
   assert.ok(typeof manifest === "object" && manifest !== null && "version" in manifest);
   assert.equal(VERSION, manifest.version);
