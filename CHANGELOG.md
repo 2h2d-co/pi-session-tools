@@ -6,7 +6,7 @@ All notable changes are documented here using Keep a Changelog.
 
 ### Changed
 
-- Require Pi 1.0.1 or later.
+- Require Pi `>=1.0.1 <1.1.0`.
 
 ## 0.0.6 - 2026-10-02
 
