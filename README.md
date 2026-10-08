@@ -13,9 +13,9 @@ extension does not launch subagents or restore workspace files.
 
 ## Requirements and loading
 
-Tested with Pi **1.0.1** and Node.js **22.23.3**. The package requires Pi
-`>=1.0.1 <1.1.0` and Node.js `>=22.19.0`. The extension refuses to load on a Pi
-older than 1.0.1, because Pi does not enforce the peer range when it installs
+Tested with Pi **1.1.0** and Node.js **22.23.3**. The package requires Pi
+`>=1.1.0 <1.2.0` and Node.js `>=22.19.0`. The extension refuses to load on a Pi
+older than 1.1.0, because Pi does not enforce the peer range when it installs
 packages.
 
 **Pi's virtual models are not supported.** Pi's experimental virtual models,

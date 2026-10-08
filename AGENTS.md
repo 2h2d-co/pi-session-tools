@@ -1,7 +1,7 @@
 # Pi session tools
 
 - This package exposes `session_inspect` and `session_handoff`.
-- Support Pi `>=1.0.1 <1.1.0`. Keep Pi peer ranges bounded below the next Pi
+- Support Pi `>=1.1.0 <1.2.0`. Keep Pi peer ranges bounded below the next Pi
   minor release and pin development dependencies to the version actually
   tested. Do not keep fallbacks for Pi versions below the minimum.
 - Test system instructions and tool declarations at the provider boundary.
