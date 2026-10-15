@@ -16,7 +16,6 @@ faux.setResponses([fauxAssistantMessage("A plan worth retaining. ".repeat(100))]
 await runtime.session.prompt("Initial request");
 const checkpoint = lastCheckpoint(runtime.session.sessionManager);
 assert.ok(checkpoint);
-const sessionId = runtime.session.sessionId;
 const resume: FauxResponseFactory = (context) => {
   if (
     mode === "compact" &&
@@ -33,7 +32,6 @@ const resume: FauxResponseFactory = (context) => {
 faux.setResponses([
   fauxAssistantMessage(
     fauxToolCall("session_handoff", {
-      expectedSessionId: sessionId,
       mode,
       ...(mode === "navigate" || mode === "fork" ? { targetEntryId: checkpoint.entry.id } : {}),
       handoff: { kind: "inline", text: "Continue the plan" },

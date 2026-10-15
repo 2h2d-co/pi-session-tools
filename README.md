@@ -49,10 +49,12 @@ investigation within a single request.
 The agent receives compact metadata at those boundaries:
 
 ```text
-[Session checkpoint: session=<session-id> entry=<entry-id>]
+[Session checkpoint: entry=<entry-id>]
 ```
 
-Use these IDs directly. There is no need to query history before every handoff.
+Use these IDs directly. Forks keep entry IDs, so the markers stay valid in a fork.
+The extension never puts the current session ID into the conversation, because
+Pi gives a fork a new session ID while copying its history. There is no need to query history before every handoff.
 The source checkpoint is included in the destination handoff for a direct
 return. Other branches and compacted-away checkpoints remain discoverable
 through `session_inspect`.
@@ -115,11 +117,10 @@ size.
 
 ## `session_handoff`
 
-Every call includes the current `expectedSessionId` and one handoff:
+Every call includes one handoff:
 
 ```ts
 {
-  expectedSessionId: string;
   mode: "navigate" | "fork" | "compact" | "new";
   targetEntryId?: string;
   compactionInstructions?: string;
@@ -156,7 +157,6 @@ closed-world. Handoffs append entries or create sessions and never delete source
 
 ```json
 {
-  "expectedSessionId": "<current-session-id>",
   "mode": "compact",
   "compactionInstructions": "Preserve the agreed design and validation results.",
   "handoff": {
@@ -173,7 +173,6 @@ agent-authored wrapper with source information and workspace safety reminders.
 
 ```json
 {
-  "expectedSessionId": "<current-session-id>",
   "mode": "new",
   "handoff": {
     "kind": "file",
@@ -218,8 +217,10 @@ Already-completed context changes are not silently undone. Source history
 remains available.
 
 Operation records use unique IDs. Reloading or resuming a session never replays
-unfinished requests automatically. Inspect the current context and source
-history before requesting a replacement operation. Navigation, message append,
+unfinished requests automatically. When a resumed session has unfinished
+records, the next run receives a hidden notice that lists them. Inspect the
+current context and source history before requesting a replacement operation.
+A handoff applies only in the session that accepted it. Navigation, message append,
 and generation are not one atomic transaction. A crash or generation failure
 can leave the destination selected without a completed continuation.
 

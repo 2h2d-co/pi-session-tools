@@ -18,6 +18,11 @@ All notable changes are documented here using Keep a Changelog.
 - Fork and new-session handoffs start the continuation from the saved handoff message, as
   navigation and compaction already did. The extra `[Agent-authored continuation]` user prompt
   is gone, so input handlers no longer see or stop that continuation.
+- `session_handoff` no longer takes `expectedSessionId`. The extension no longer saves a hidden
+  "Current Pi session" note into every run or the handoff message, and checkpoint markers drop
+  the session ID. A forked session copied those notes with the old ID, so a model that repeated
+  one had its handoff rejected. A handoff still applies only in the session that accepted it.
+  The hidden notice about unfinished handoffs is sent only when a resumed session has some.
 
 ## 0.0.7 - 2026-10-08
 

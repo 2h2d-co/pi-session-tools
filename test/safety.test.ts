@@ -21,7 +21,6 @@ test("a handoff batched with another tool is rejected without changing context",
     faux.setResponses([
       fauxAssistantMessage([
         fauxToolCall("session_handoff", {
-          expectedSessionId: sessionId,
           mode: "new",
           handoff: { kind: "inline", text: "Continue" },
         }),
@@ -58,7 +57,6 @@ test("incoming user input cancels an accepted handoff and is not lost", async ()
     faux.setResponses([
       fauxAssistantMessage(
         fauxToolCall("session_handoff", {
-          expectedSessionId: sessionId,
           mode: "new",
           handoff: { kind: "inline", text: "Continue" },
         }),
@@ -93,7 +91,6 @@ for (const mode of ["navigate", "fork", "new", "compact"] as const) {
       faux.setResponses([
         fauxAssistantMessage(
           fauxToolCall("session_handoff", {
-            expectedSessionId: sessionId,
             mode,
             ...(mode === "navigate" || mode === "fork"
               ? { targetEntryId: checkpoint.entry.id }
@@ -131,7 +128,6 @@ test("a findings-file mutation after acceptance stops before navigation", async 
     faux.setResponses([
       fauxAssistantMessage(
         fauxToolCall("session_handoff", {
-          expectedSessionId: sessionId,
           mode: "new",
           handoff: { kind: "file", path: filename, instruction: "Read before continuing" },
         }),
@@ -195,7 +191,6 @@ test("a file change after navigation reports a partial operation without undoing
     faux.setResponses([
       fauxAssistantMessage(
         fauxToolCall("session_handoff", {
-          expectedSessionId: runtime.session.sessionId,
           mode: "navigate",
           targetEntryId: target.entry.id,
           handoff: { kind: "file", path: filename, instruction: "Read" },
@@ -228,7 +223,6 @@ test("user abort cancels an accepted handoff", async () => {
     faux.setResponses([
       fauxAssistantMessage(
         fauxToolCall("session_handoff", {
-          expectedSessionId: sessionId,
           mode: "new",
           handoff: { kind: "inline", text: "Do not execute after abort" },
         }),
@@ -251,7 +245,6 @@ for (const mode of ["fork", "new"]) {
       faux.setResponses([
         fauxAssistantMessage(
           fauxToolCall("session_handoff", {
-            expectedSessionId: sessionId,
             mode,
             ...(mode === "fork" ? { targetEntryId: target } : {}),
             handoff: { kind: "inline", text: "Continue" },
@@ -281,7 +274,6 @@ test("an unsubmitted TUI editor draft prevents session replacement", async (cont
     faux.setResponses([
       fauxAssistantMessage(
         fauxToolCall("session_handoff", {
-          expectedSessionId: sessionId,
           mode: "new",
           handoff: { kind: "inline", text: "Continue" },
         }),

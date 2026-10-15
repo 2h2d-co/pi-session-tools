@@ -268,7 +268,6 @@ test("agent and typed handoffs find this extension's command when another extens
     faux.setResponses([
       fauxAssistantMessage(
         fauxToolCall("session_handoff", {
-          expectedSessionId: runtime.session.sessionId,
           mode: "navigate",
           targetEntryId: checkpoint.entry.id,
           handoff: { kind: "inline", text: "Agent continuation" },

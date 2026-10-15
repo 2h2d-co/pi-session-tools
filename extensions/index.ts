@@ -49,6 +49,8 @@ interface Request {
   author: Author;
   input: HandoffInput;
   prepared: PreparedHandoff;
+  /** The session the request was made in. Applying it anywhere else is refused. */
+  sessionId: string;
   /** Last entry when the request was made: the handoff call's assistant message, or the user's leaf. */
   sourceId: string;
   epoch: number;
@@ -138,10 +140,7 @@ export default function sessionTools(pi: ExtensionAPI): void {
   }
 
   function assertCurrent(request: Request, ctx: ExtensionContext): void {
-    if (
-      ctx.sessionManager.getSessionId() !== request.input.expectedSessionId ||
-      epoch !== request.epoch
-    ) {
+    if (ctx.sessionManager.getSessionId() !== request.sessionId || epoch !== request.epoch) {
       throw new Error("Session or user input changed. The pending handoff was cancelled.");
     }
     if (ctx.hasPendingMessages()) throw new Error("Queued input must be handled before a handoff.");
@@ -197,17 +196,11 @@ export default function sessionTools(pi: ExtensionAPI): void {
       .slice(-10)
       .map((operation) => operation.operationId);
   });
-  pi.on("before_agent_start", (_event, ctx) => {
+  pi.on("before_agent_start", () => {
+    if (!recovery.length) return;
     const message = {
       customType: NOTICE_TYPE,
-      content: [
-        `Current Pi session: ${ctx.sessionManager.getSessionId()}.`,
-        ...(recovery.length
-          ? [
-              `Unfinished handoff records: ${recovery.join(", ")}. They were not replayed. Use session_inspect and the saved source history to establish what happened before requesting another handoff.`,
-            ]
-          : []),
-      ].join("\n"),
+      content: `Unfinished handoff records: ${recovery.join(", ")}. They were not replayed. Use session_inspect and the saved source history to establish what happened before requesting another handoff.`,
       display: false,
     };
     recovery = [];
@@ -266,7 +259,7 @@ export default function sessionTools(pi: ExtensionAPI): void {
         const marker: (typeof event.messages)[number] = {
           role: "custom",
           customType: CHECKPOINT_TYPE,
-          content: `[Session checkpoint: session=${ctx.sessionManager.getSessionId()} entry=${entryId}]`,
+          content: `[Session checkpoint: entry=${entryId}]`,
           display: false,
           timestamp: message.timestamp,
         };
@@ -376,13 +369,7 @@ export default function sessionTools(pi: ExtensionAPI): void {
             }
             // Pi prepares a custom-message run like a prompt, so the handoff
             // itself starts the continuation with current instructions and tools.
-            await replacement.sendMessage(
-              {
-                ...message,
-                content: `Current Pi session: ${replacement.sessionManager.getSessionId()}.\n${message.content}`,
-              },
-              { triggerTurn: true },
-            );
+            await replacement.sendMessage(message, { triggerTurn: true });
           };
         };
         const result =
@@ -420,7 +407,7 @@ export default function sessionTools(pi: ExtensionAPI): void {
         });
       }
       if (
-        ctx.sessionManager.getSessionId() !== request.input.expectedSessionId ||
+        ctx.sessionManager.getSessionId() !== request.sessionId ||
         epoch !== request.epoch ||
         !ctx.isIdle() ||
         ctx.hasPendingMessages()
@@ -435,13 +422,7 @@ export default function sessionTools(pi: ExtensionAPI): void {
       }
       record(request, "dispatched");
       pending = undefined;
-      pi.sendMessage(
-        {
-          ...message,
-          content: `Current Pi session: ${ctx.sessionManager.getSessionId()}.\n${message.content}`,
-        },
-        { triggerTurn: true },
-      );
+      pi.sendMessage(message, { triggerTurn: true });
       await ctx.waitForIdle();
     } catch (error) {
       // Replacement invalidates old session APIs. Its failure is reported by Pi's command runner.
@@ -518,7 +499,6 @@ export default function sessionTools(pi: ExtensionAPI): void {
     }
     if (targetEntryId) requireCheckpoint(manager, targetEntryId);
     const input: HandoffInput = {
-      expectedSessionId: manager.getSessionId(),
       mode,
       ...(targetEntryId ? { targetEntryId } : {}),
       handoff: { kind: "inline", text },
@@ -530,6 +510,7 @@ export default function sessionTools(pi: ExtensionAPI): void {
       author: "user",
       input,
       prepared: await prepareHandoff(input, ctx.cwd),
+      sessionId: manager.getSessionId(),
       sourceId,
       epoch,
       applying: false,
@@ -616,9 +597,6 @@ export default function sessionTools(pi: ExtensionAPI): void {
       Value.Assert(handoffSchema, input);
       validateHandoff(input);
       if (pending) throw new Error("A handoff is already pending.");
-      if (ctx.sessionManager.getSessionId() !== input.expectedSessionId) {
-        throw new Error("Session ID does not match. Inspect the current session.");
-      }
       if (!ctx.model) throw new Error("A model is required to continue after a handoff.");
       if ((input.mode === "fork" || input.mode === "new") && !ctx.sessionManager.getSessionFile()) {
         throw new Error(
@@ -629,13 +607,18 @@ export default function sessionTools(pi: ExtensionAPI): void {
       if (ctx.mode === "tui" && ctx.ui.getEditorText().trim()) {
         throw new Error("Finish or save the editor draft before handing off.");
       }
+      const sessionId = ctx.sessionManager.getSessionId();
       const assistantId = assertSoleCall(ctx, toolCallId);
       if (input.targetEntryId) requireCheckpoint(ctx.sessionManager, input.targetEntryId);
       const startEpoch = epoch;
       const prepared = await prepareHandoff(input, ctx.cwd, signal);
       signal?.throwIfAborted();
-      if (startEpoch !== epoch || ctx.hasPendingMessages()) {
-        throw new Error("Input changed while preparing the handoff.");
+      if (
+        startEpoch !== epoch ||
+        ctx.hasPendingMessages() ||
+        ctx.sessionManager.getSessionId() !== sessionId
+      ) {
+        throw new Error("Input or session changed while preparing the handoff.");
       }
       if (!ownCommand(pi)) throw new Error("The /handoff command is unavailable or ambiguous.");
       const request: Request = {
@@ -643,6 +626,7 @@ export default function sessionTools(pi: ExtensionAPI): void {
         author: "agent",
         input,
         prepared,
+        sessionId,
         sourceId: assistantId,
         epoch,
         applying: false,

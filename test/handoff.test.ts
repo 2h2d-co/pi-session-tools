@@ -10,7 +10,6 @@ import { handoffText, prepareHandoff, verifyFindings } from "../src/handoff.ts";
 import { handoffSchema, validateHandoff, type HandoffInput } from "../src/schemas.ts";
 
 const inline: HandoffInput = {
-  expectedSessionId: "session",
   mode: "new",
   handoff: { kind: "inline", text: "No schema changes. Implement the plan." },
 };

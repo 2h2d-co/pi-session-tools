@@ -19,7 +19,6 @@ export const inspectSchema = Type.Object(
 
 export const handoffSchema = Type.Object(
   {
-    expectedSessionId: Type.String({ minLength: 1, maxLength: 128 }),
     mode: StringEnum(["navigate", "fork", "compact", "new"]),
     targetEntryId: Type.Optional(entryId),
     compactionInstructions: Type.Optional(Type.String({ minLength: 1, maxLength: 8000 })),

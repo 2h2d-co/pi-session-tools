@@ -59,7 +59,6 @@ async function packagedCli(t: TestContext) {
   await writeFile(
     join(agent, "settings.json"),
     JSON.stringify({
-      transport: "sse",
       retry: { enabled: false, provider: { timeoutMs: 60_000, maxRetries: 0 } },
       compaction: { enabled: false, keepRecentTokens: 1 },
     }),
@@ -189,7 +188,6 @@ test(
           ),
       );
       const input = {
-        expectedSessionId: manager.getSessionId(),
         mode,
         ...(mode === "navigate" || mode === "fork" ? { targetEntryId: checkpoint.entry.id } : {}),
         handoff: {

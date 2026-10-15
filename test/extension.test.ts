@@ -7,7 +7,7 @@ import {
   getCurrentTools,
   type FauxResponseFactory,
 } from "@earendil-works/pi-ai";
-import { CHECKPOINT_TYPE, HANDOFF_TYPE, lastCheckpoint } from "../src/history.ts";
+import { CHECKPOINT_TYPE, HANDOFF_TYPE, NOTICE_TYPE, lastCheckpoint } from "../src/history.ts";
 import { PROJECT_INSTRUCTIONS, SYSTEM_INSTRUCTIONS, testRuntime, waitUntil } from "./runtime.ts";
 
 test("real Pi emits non-triggering checkpoint metadata after a completed turn", async () => {
@@ -25,12 +25,23 @@ test("real Pi emits non-triggering checkpoint metadata after a completed turn", 
     assert.equal(faux.state.callCount, 1);
     faux.setResponses([
       (context) => {
-        assert.match(JSON.stringify(context.messages), new RegExp(`entry=${checkpoint.entry.id}`));
+        const text = JSON.stringify(context.messages);
+        assert.match(text, new RegExp(`\\[Session checkpoint: entry=${checkpoint.entry.id}\\]`));
+        // The session ID changes when Pi forks, so it is never saved into the conversation.
+        assert.doesNotMatch(text, new RegExp(runtime.session.sessionId));
         return fauxAssistantMessage("Checkpoint is available");
       },
     ]);
     await runtime.session.prompt("Continue");
     assert.equal(runtime.session.messages.at(-1)?.role, "assistant");
+    assert.equal(
+      runtime.session.sessionManager
+        .getEntries()
+        .filter((entry) => entry.type === "custom_message" && entry.customType === NOTICE_TYPE)
+        .length,
+      0,
+      "Runs without unfinished handoffs add no notice.",
+    );
     assert.deepEqual(errors, []);
   } finally {
     await runtime.dispose();
@@ -82,7 +93,6 @@ for (const mode of ["navigate", "fork", "new", "compact"] as const) {
       const sourceManager = runtime.session.sessionManager;
       const sourceSessionId = sourceManager.getSessionId();
       const input = {
-        expectedSessionId: sourceSessionId,
         mode,
         ...(mode === "navigate" || mode === "fork" ? { targetEntryId: checkpoint.entry.id } : {}),
         ...(mode === "compact"
@@ -204,7 +214,6 @@ for (const mode of ["new", "fork"] as const) {
       faux.setResponses([
         fauxAssistantMessage(
           fauxToolCall("session_handoff", {
-            expectedSessionId: runtime.session.sessionId,
             mode,
             ...(mode === "fork" ? { targetEntryId: checkpoint.entry.id } : {}),
             handoff: { kind: "inline", text: "Continue" },
@@ -254,7 +263,6 @@ for (const mode of ["new", "fork"] as const) {
       faux.setResponses([
         fauxAssistantMessage(
           fauxToolCall("session_handoff", {
-            expectedSessionId: runtime.session.sessionId,
             mode,
             ...(mode === "fork" ? { targetEntryId: checkpoint.entry.id } : {}),
             handoff: { kind: "inline", text: "Carry current restrictions" },
@@ -300,7 +308,6 @@ test("navigation can return to a preserved future branch", async () => {
       faux.setResponses([
         fauxAssistantMessage(
           fauxToolCall("session_handoff", {
-            expectedSessionId: runtime.session.sessionId,
             mode: "navigate",
             targetEntryId: target.entry.id,
             handoff: { kind: "inline", text: "Carry findings into the selected branch" },
@@ -319,35 +326,44 @@ test("navigation can return to a preserved future branch", async () => {
   }
 });
 
-test("a continuation can hand off again without a stale context or an idle deadlock", async () => {
-  const { runtime, faux, errors } = await testRuntime();
-  try {
-    const firstSessionId = runtime.session.sessionId;
-    const next = () =>
-      fauxAssistantMessage(
-        fauxToolCall("session_handoff", {
-          expectedSessionId: runtime.session.sessionId,
-          mode: "new",
-          handoff: { kind: "inline", text: "Continue without granting new permissions" },
-        }),
+for (const mode of ["new", "fork"] as const) {
+  test(`a ${mode} continuation can hand off again without a stale context or an idle deadlock`, async () => {
+    const { runtime, faux, errors } = await testRuntime();
+    try {
+      faux.setResponses([fauxAssistantMessage("Plan")]);
+      await runtime.session.prompt("Plan");
+      const checkpoint = lastCheckpoint(runtime.session.sessionManager);
+      assert.ok(checkpoint);
+      const firstSessionId = runtime.session.sessionId;
+      const handoff = (handoffMode: "new" | "fork") =>
+        fauxAssistantMessage(
+          fauxToolCall("session_handoff", {
+            mode: handoffMode,
+            ...(handoffMode === "fork" ? { targetEntryId: checkpoint.entry.id } : {}),
+            handoff: { kind: "inline", text: "Continue without granting new permissions" },
+          }),
+        );
+      faux.setResponses([
+        handoff(mode),
+        (context) => {
+          assert.notEqual(runtime.session.sessionId, firstSessionId);
+          const text = JSON.stringify(context.messages);
+          assert.match(text, new RegExp(`Source checkpoint: session=${firstSessionId}`));
+          // A fork copies the source history but never a session ID the new session must repeat.
+          assert.doesNotMatch(text, /Current Pi session/);
+          return handoff("new");
+        },
+        fauxAssistantMessage("Finished the second continuation"),
+      ]);
+      await runtime.session.prompt("Hand off twice");
+      assert.match(
+        JSON.stringify(runtime.session.messages.at(-1)),
+        /Finished the second continuation/,
       );
-    faux.setResponses([
-      next,
-      (context) => {
-        assert.notEqual(runtime.session.sessionId, firstSessionId);
-        assert.match(JSON.stringify(context.messages), new RegExp(runtime.session.sessionId));
-        return next();
-      },
-      fauxAssistantMessage("Finished the second continuation"),
-    ]);
-    await runtime.session.prompt("Hand off twice");
-    assert.match(
-      JSON.stringify(runtime.session.messages.at(-1)),
-      /Finished the second continuation/,
-    );
-    assert.equal(faux.getPendingResponseCount(), 0);
-    assert.deepEqual(errors, []);
-  } finally {
-    await runtime.dispose();
-  }
-});
+      assert.equal(faux.getPendingResponseCount(), 0);
+      assert.deepEqual(errors, []);
+    } finally {
+      await runtime.dispose();
+    }
+  });
+}
