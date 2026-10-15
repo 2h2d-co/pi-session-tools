@@ -233,7 +233,10 @@ for (const mode of ["new", "fork"] as const) {
       });
       pi.on("before_agent_start", (event) => {
         event.systemPromptOptions.sections["session_tools_test"] = `Policy phase: ${phase}`;
-        if (event.prompt.includes("[Agent-authored continuation]")) {
+        if (
+          event.messageType === "user" &&
+          event.prompt.includes("[Agent-authored continuation]")
+        ) {
           event.systemPromptOptions.selectedTools = event.systemPromptOptions.selectedTools.filter(
             (name) => name !== "session_inspect",
           );
