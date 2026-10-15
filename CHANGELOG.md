@@ -4,6 +4,8 @@ All notable changes are documented here using Keep a Changelog.
 
 ## Unreleased
 
+## 0.0.8 - 2026-10-15
+
 ### Added
 
 - `/handoff new|fork|navigate|compact` lets you hand off the conversation yourself. Your
