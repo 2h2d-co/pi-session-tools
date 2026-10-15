@@ -141,6 +141,28 @@ export function lastCheckpoint(manager: ReadonlySessionManager): Checkpoint | un
     .find((entry) => entry !== undefined);
 }
 
+/** Replayable checkpoints across the tree, newest first, with one-line previews. */
+export function recentCheckpoints(
+  manager: ReadonlySessionManager,
+  limit: number,
+): { entryId: string; preview: string }[] {
+  const entries = manager.getEntries();
+  const result: { entryId: string; preview: string }[] = [];
+  for (const { entry } of [...checkpoints(entries).values()].toReversed()) {
+    if (result.length === limit) break;
+    try {
+      assertReplay(entries, entry.id);
+    } catch (error) {
+      if (error instanceof Error) continue;
+      throw error;
+    }
+    const label = manager.getLabel(entry.id);
+    const text = (label ?? entryText(entry)).replaceAll(/\s+/g, " ").trim();
+    result.push({ entryId: entry.id, preview: text.slice(0, 80) });
+  }
+  return result;
+}
+
 /** Text only: never expose model reasoning, images, tool arguments, or extension state. */
 export function entryText(entry: SessionEntry, includeToolResults = false): string {
   if (entry.type === "compaction" || entry.type === "branch_summary") return entry.summary;

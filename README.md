@@ -6,6 +6,8 @@ different conversation context.
 - **`session_inspect`** finds or reads checkpoints across the current session tree.
 - **`session_handoff`** navigates, forks, compacts, or starts a fresh session,
   then appends a handoff and resumes the agent.
+- **`/session-handoff`** does the same for you: type a mode and a message,
+  and the agent continues from the new context.
 
 A checkpoint is the last message of a completed assistant response and its tool
 batch. A handoff carries findings, current restrictions, and next steps. This
@@ -194,7 +196,7 @@ finish. The initial result says **accepted**, not completed.
 
 1. Validate the request, destination, and absence of pending user input.
 2. Record the request and terminate the tool batch.
-3. At `agent_settled`, dispatch an internal command.
+3. At `agent_settled`, run `/session-handoff apply <operation-id>`.
 4. Navigate, fork, compact, or create the new session through Pi's public APIs.
 5. Append exactly one handoff after success and start the next agent run.
 
@@ -221,8 +223,37 @@ history before requesting a replacement operation. Navigation, message append,
 and generation are not one atomic transaction. A crash or generation failure
 can leave the destination selected without a completed continuation.
 
-The internal `/session-tools-apply-handoff` command accepts only a matching
-in-memory request. It is not a recovery or manual-navigation command.
+The `apply` form applies only the agent request that is still waiting in
+memory. Typing it with any other ID changes nothing, so it cannot replay a
+saved request.
+
+## `/session-handoff` command
+
+```text
+/session-handoff new <message>
+/session-handoff fork <checkpoint-id> <message>
+/session-handoff navigate <checkpoint-id> <message>
+/session-handoff compact <message>
+```
+
+The command performs the same four modes for you. Your message becomes the
+handoff and starts the next agent run. It is marked as user-authored and
+carries the same source checkpoint and workspace reminders as an agent handoff.
+The message has the same 16,000-character limit. `compact` uses Pi's default
+summary instructions. Use the tool for findings files or custom summary
+instructions.
+
+In the interactive UI and RPC, you can leave parts out. With no arguments, the
+command asks for the mode. For `fork` and `navigate` without a checkpoint ID,
+it lists the 50 newest checkpoints across the session tree with their entry ID
+and a short preview. Without a message, it opens an editor. Cancelling any step
+changes nothing. Print and JSON modes have no dialogs, so there the command
+needs every part.
+
+The command runs only when the agent is idle. It applies the same checks as an
+agent handoff: no queued input, no unsubmitted editor draft, a valid
+checkpoint, and a persisted session for `fork` and `new`. It records the same
+operation journal.
 
 ## Safety boundaries
 
@@ -234,7 +265,8 @@ in-memory request. It is not a recovery or manual-navigation command.
   be resumed. Navigation and compaction also work with in-memory sessions.
 - Carry current user restrictions, changed paths, validation results, active
   process handles, remaining work, and next steps in the handoff or findings file.
-- Agent-authored handoffs do not grant new permissions.
+- Agent-authored handoffs do not grant new permissions. Handoffs you send with
+  `/session-handoff` are your own instructions.
 - Other extensions retain their own lifecycle and side effects. Review any
   extension that restores files during navigation.
 
@@ -263,10 +295,11 @@ directory is in effect. Other Pi launches keep their own environment.
 
 Before releasing, run `npm run test:live` with an existing Pi Codex login.
 It exercises inspection, all four handoff modes, automatic continuation, and
-source-history preservation through the shipped Pi CLI. A separate
-test loads Pi's built-in `codemode` extension. It checks that a script receives
-a structured `session_inspect` response and cannot reach `session_handoff`. The test uses
-synthetic conversations and isolated sessions. It makes billed requests.
+source-history preservation through the shipped Pi CLI. A second test forks
+with a typed `/session-handoff` command. A third test loads Pi's built-in
+`codemode` extension. It checks that a script receives a structured
+`session_inspect` response and cannot reach `session_handoff`. The tests use
+synthetic conversations and isolated sessions. They make billed requests.
 
 Archive selection:
 

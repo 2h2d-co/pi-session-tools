@@ -15,6 +15,7 @@ import {
   type AgentSession,
   type CreateAgentSessionRuntimeFactory,
   type ExtensionFactory,
+  type ExtensionUIContext,
 } from "@earendil-works/pi-coding-agent";
 
 export const SYSTEM_INSTRUCTIONS = "Base test instructions: Never deploy without approval.";
@@ -25,6 +26,7 @@ export async function testRuntime(
   extra?: ExtensionFactory,
   mode: "tui" | "rpc" | "print" | "json" = "print",
   persisted = true,
+  ui?: Partial<ExtensionUIContext>,
 ) {
   const cwd = await mkdtemp(join(tmpdir(), "pi-session-tools-runtime-"));
   const agentDir = join(cwd, "agent");
@@ -93,6 +95,8 @@ export async function testRuntime(
   const bind = async (session: AgentSession) => {
     await session.bindExtensions({
       mode,
+      // Overrides replace methods of Pi's own no-op UI, which also makes `ctx.hasUI` true.
+      ...(ui ? { uiContext: { ...session.extensionRunner.getUIContext(), ...ui } } : {}),
       onError: (error) => {
         errors.push(error.error);
       },

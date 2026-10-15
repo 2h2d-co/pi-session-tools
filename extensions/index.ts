@@ -15,12 +15,15 @@ import {
   checkpoints,
   inspectSession,
   lastCheckpoint,
+  recentCheckpoints,
   requireCheckpoint,
 } from "../src/history.ts";
+import { MODES, USAGE, parseHandoffCommand, type Mode } from "../src/command.ts";
 import {
   handoffText,
   prepareHandoff,
   verifyFindings,
+  type Author,
   type Origin,
   type PreparedHandoff,
 } from "../src/handoff.ts";
@@ -33,20 +36,22 @@ import {
   type InspectOutput,
 } from "../src/schemas.ts";
 
-const APPLY_COMMAND = "session-tools-apply-handoff";
+const COMMAND = "session-handoff";
+const MAX_TEXT = 16000;
 const INFO_TYPE = "pi-session-tools:notice";
 type NewSessionOptions = NonNullable<Parameters<ExtensionCommandContext["newSession"]>[0]>;
 type ReplacementContext = Parameters<NonNullable<NewSessionOptions["withSession"]>>[0];
 
 interface Request {
   id: string;
+  author: Author;
   input: HandoffInput;
   prepared: PreparedHandoff;
-  assistantId: string;
+  /** Last entry when the request was made: the handoff call's assistant message, or the user's leaf. */
+  sourceId: string;
   epoch: number;
   applying: boolean;
   signal?: AbortSignal;
-  command: string;
 }
 
 function operationId(entry: SessionEntry): string | undefined {
@@ -100,6 +105,14 @@ function assertSoleCall(ctx: ExtensionContext, toolCallId: string): string {
   return entry.id;
 }
 
+/** The command's invocation name. Pi suffixes duplicate names, such as `session-handoff:2`. */
+function ownCommand(pi: ExtensionAPI): string | undefined {
+  const commands = pi
+    .getCommands()
+    .filter((command) => command.name === COMMAND || command.name.startsWith(`${COMMAND}:`));
+  return commands.length === 1 ? commands[0]?.name : undefined;
+}
+
 export default function sessionTools(pi: ExtensionAPI): void {
   requirePiVersion("pi-session-tools");
   let pending: Request | undefined;
@@ -127,7 +140,7 @@ export default function sessionTools(pi: ExtensionAPI): void {
       throw new Error("Finish or save the editor draft before handing off.");
     }
     const path = ctx.sessionManager.getBranch();
-    const start = path.findIndex((entry) => entry.id === request.assistantId);
+    const start = path.findIndex((entry) => entry.id === request.sourceId);
     if (start < 0) throw new Error("Source branch changed. The pending handoff was cancelled.");
     const later = path.slice(start + 1);
     if (
@@ -254,23 +267,19 @@ export default function sessionTools(pi: ExtensionAPI): void {
   });
   pi.on("agent_settled", (_event, ctx) => {
     const request = pending;
-    if (!request || request.applying || !ctx.isIdle()) return;
-    const commands = pi
-      .getCommands()
-      .filter(
-        (command) => command.name === APPLY_COMMAND || command.name.startsWith(`${APPLY_COMMAND}:`),
-      );
-    if (commands.length !== 1 || commands[0]?.name !== request.command) {
-      record(request, "failed", { error: "Internal handoff command changed before dispatch." });
+    if (!request || request.author !== "agent" || request.applying || !ctx.isIdle()) return;
+    const command = ownCommand(pi);
+    if (!command) {
+      record(request, "failed", { error: "Handoff command is unavailable or ambiguous." });
       pending = undefined;
-      ctx.ui.notify("Handoff stopped: internal command changed before dispatch.", "error");
+      ctx.ui.notify("Handoff stopped: /session-handoff is unavailable or ambiguous.", "error");
       return;
     }
     // This event is outside the active run. Pi defers prompts sent from
     // settled handlers until every handler returns, then runs them before it
     // resolves idle waits, so print/JSON hosts cannot dispose the runtime early.
     // Awaiting the command here would wait for work that cannot start.
-    pi.sendUserMessage(`/${request.command} ${request.id}`, { expandPromptTemplates: true });
+    pi.sendUserMessage(`/${command} apply ${request.id}`, { expandPromptTemplates: true });
   });
 
   pi.registerTool({
@@ -307,145 +316,268 @@ export default function sessionTools(pi: ExtensionAPI): void {
     },
   });
 
-  pi.registerCommand(APPLY_COMMAND, {
-    description:
-      "Internal command for an accepted session_handoff request. Does not replay saved requests.",
-    async handler(args, ctx) {
-      const request = pending;
-      if (!request || request.id !== args.trim() || request.applying) {
-        ctx.ui.notify(
-          "No matching pending handoff. Saved operations are never replayed automatically.",
-          "warning",
-        );
+  async function apply(request: Request, ctx: ExtensionCommandContext): Promise<void> {
+    request.applying = true;
+    let replaced = false;
+    try {
+      await ctx.waitForIdle();
+      request.signal?.throwIfAborted();
+      assertCurrent(request, ctx);
+      await verifyFindings(request.prepared);
+      assertCurrent(request, ctx);
+      if (!ctx.isIdle()) throw new Error("The agent is no longer idle.");
+      const source = lastCheckpoint(ctx.sessionManager);
+      if (!source || (request.author === "agent" && source.assistantId !== request.sourceId)) {
+        throw new Error("The handoff tool batch did not finish at the expected checkpoint.");
+      }
+      const sessionFile = ctx.sessionManager.getSessionFile();
+      const origin: Origin = {
+        sessionId: ctx.sessionManager.getSessionId(),
+        entryId: source.entry.id,
+        ...(sessionFile ? { sessionFile } : {}),
+      };
+      const message = {
+        customType: HANDOFF_TYPE,
+        content: handoffText(request.prepared, origin, request.author),
+        details: {
+          operationId: request.id,
+          origin,
+          mode: request.input.mode,
+          author: request.author,
+        },
+        display: true,
+      };
+      record(request, "applying", { origin });
+      if (request.input.targetEntryId)
+        requireCheckpoint(ctx.sessionManager, request.input.targetEntryId);
+      if (request.input.mode === "new" || request.input.mode === "fork") {
+        let resume: (() => Promise<void>) | undefined;
+        const withSession = async (replacement: ReplacementContext) => {
+          replaced = true;
+          const leaf = replacement.sessionManager.getLeafId();
+          resume = async () => {
+            await verifyFindings(request.prepared);
+            if (
+              !replacement.isIdle() ||
+              replacement.hasPendingMessages() ||
+              replacement.sessionManager.getLeafId() !== leaf ||
+              (replacement.mode === "tui" && replacement.ui.getEditorText().trim())
+            ) {
+              throw new Error("Replacement session received input before handoff delivery.");
+            }
+            // Pi prepares a custom-message run like a prompt, so the handoff
+            // itself starts the continuation with current instructions and tools.
+            await replacement.sendMessage(
+              {
+                ...message,
+                content: `Current Pi session: ${replacement.sessionManager.getSessionId()}.\n${message.content}`,
+              },
+              { triggerTurn: true },
+            );
+          };
+        };
+        const result =
+          request.input.mode === "fork"
+            ? await ctx.fork(request.input.targetEntryId ?? "", { position: "at", withSession })
+            : await ctx.newSession({
+                ...(sessionFile ? { parentSession: sessionFile } : {}),
+                withSession,
+              });
+        if (result.cancelled) throw new Error("Session replacement was cancelled.");
+        // Let native TUI actions finish clearing the old editor before the
+        // continuation starts. Only the fresh replacement context is used.
+        if (resume) await resume();
         return;
       }
-      request.applying = true;
-      let replaced = false;
-      try {
-        await ctx.waitForIdle();
-        request.signal?.throwIfAborted();
-        assertCurrent(request, ctx);
-        await verifyFindings(request.prepared);
-        assertCurrent(request, ctx);
-        if (!ctx.isIdle()) throw new Error("The agent is no longer idle.");
-        const source = lastCheckpoint(ctx.sessionManager);
-        if (!source || source.assistantId !== request.assistantId) {
-          throw new Error("The handoff tool batch did not finish at the expected checkpoint.");
+      if (request.input.mode === "navigate") {
+        const result = await ctx.navigateTree(request.input.targetEntryId ?? "", {
+          summarize: false,
+        });
+        if (result.cancelled) throw new Error("Navigation was cancelled.");
+        if (ctx.sessionManager.getLeafId() !== request.input.targetEntryId) {
+          throw new Error("Another extension changed the destination before handoff delivery.");
         }
-        const sessionFile = ctx.sessionManager.getSessionFile();
-        const origin: Origin = {
-          sessionId: ctx.sessionManager.getSessionId(),
-          entryId: source.entry.id,
-          ...(sessionFile ? { sessionFile } : {}),
-        };
-        const message = {
-          customType: HANDOFF_TYPE,
-          content: handoffText(request.prepared, origin),
-          details: { operationId: request.id, origin, mode: request.input.mode },
+      } else {
+        await new Promise<void>((resolve, reject) => {
+          ctx.compact({
+            ...(request.input.compactionInstructions
+              ? { customInstructions: request.input.compactionInstructions }
+              : {}),
+            onComplete: () => {
+              resolve();
+            },
+            onError: reject,
+          });
+        });
+      }
+      if (
+        ctx.sessionManager.getSessionId() !== request.input.expectedSessionId ||
+        epoch !== request.epoch ||
+        !ctx.isIdle() ||
+        ctx.hasPendingMessages()
+      ) {
+        throw new Error(
+          "Input or session state changed after the operation. Handoff was not delivered.",
+        );
+      }
+      await verifyFindings(request.prepared);
+      if (!ctx.isIdle() || epoch !== request.epoch) {
+        throw new Error("Input arrived before handoff delivery.");
+      }
+      record(request, "dispatched");
+      pending = undefined;
+      pi.sendMessage(
+        {
+          ...message,
+          content: `Current Pi session: ${ctx.sessionManager.getSessionId()}.\n${message.content}`,
+        },
+        { triggerTurn: true },
+      );
+      await ctx.waitForIdle();
+    } catch (error) {
+      // Replacement invalidates old session APIs. Its failure is reported by Pi's command runner.
+      if (replaced || pending !== request) throw error;
+      record(request, "failed", { error: errorText(error) });
+      pending = undefined;
+      pi.sendMessage(
+        {
+          customType: INFO_TYPE,
+          content: `Session handoff ${request.id} stopped: ${errorText(error)} No automatic retry was attempted. Inspect the current session before continuing.`,
           display: true,
-        };
-        record(request, "applying", { origin });
-        if (request.input.targetEntryId)
-          requireCheckpoint(ctx.sessionManager, request.input.targetEntryId);
-        if (request.input.mode === "new" || request.input.mode === "fork") {
-          let resume: (() => Promise<void>) | undefined;
-          const withSession = async (replacement: ReplacementContext) => {
-            replaced = true;
-            const leaf = replacement.sessionManager.getLeafId();
-            resume = async () => {
-              await verifyFindings(request.prepared);
-              if (
-                !replacement.isIdle() ||
-                replacement.hasPendingMessages() ||
-                replacement.sessionManager.getLeafId() !== leaf ||
-                (replacement.mode === "tui" && replacement.ui.getEditorText().trim())
-              ) {
-                throw new Error("Replacement session received input before handoff delivery.");
-              }
-              // Pi prepares a custom-message run like a prompt, so the handoff
-              // itself starts the continuation with current instructions and tools.
-              await replacement.sendMessage(
-                {
-                  ...message,
-                  content: `Current Pi session: ${replacement.sessionManager.getSessionId()}.\n${message.content}`,
-                },
-                { triggerTurn: true },
-              );
-            };
-          };
-          const result =
-            request.input.mode === "fork"
-              ? await ctx.fork(request.input.targetEntryId ?? "", { position: "at", withSession })
-              : await ctx.newSession({
-                  ...(sessionFile ? { parentSession: sessionFile } : {}),
-                  withSession,
-                });
-          if (result.cancelled) throw new Error("Session replacement was cancelled.");
-          // Let native TUI actions finish clearing the old editor before the
-          // continuation starts. Only the fresh replacement context is used.
-          if (resume) await resume();
+        },
+        { triggerTurn: false },
+      );
+      ctx.ui.notify(errorText(error), "error");
+    }
+  }
+
+  /** Build a user request from command arguments, asking for omitted parts when a UI exists. */
+  async function userRequest(
+    args: string,
+    ctx: ExtensionCommandContext,
+  ): Promise<Request | undefined> {
+    if (pending) throw new Error("A handoff is already pending.");
+    if (!ctx.isIdle()) throw new Error("Wait for the agent to finish before handing off.");
+    const manager = ctx.sessionManager;
+    const parsed = parseHandoffCommand(args, (id) => manager.getEntry(id) !== undefined);
+    let mode: Mode | undefined = parsed.mode;
+    if (!mode) {
+      if (!ctx.hasUI) throw new Error(USAGE);
+      const labels = MODES.map((item) => `${item.mode}: ${item.description}`);
+      const choice = await ctx.ui.select("Hand off this conversation", labels);
+      mode = MODES[labels.indexOf(choice ?? "")]?.mode;
+      if (!mode) return undefined;
+    }
+    let targetEntryId = parsed.targetEntryId;
+    if (!targetEntryId && (mode === "fork" || mode === "navigate")) {
+      if (!ctx.hasUI) throw new Error(USAGE);
+      const options = recentCheckpoints(manager, 50);
+      if (!options.length) throw new Error("No completed turn to hand off to yet.");
+      const labels = options.map((item) => `${item.entryId}  ${item.preview}`);
+      const choice = await ctx.ui.select(
+        mode === "fork" ? "Checkpoint to fork from" : "Checkpoint to return to",
+        labels,
+      );
+      targetEntryId = options[labels.indexOf(choice ?? "")]?.entryId;
+      if (!targetEntryId) return undefined;
+    }
+    let text = parsed.text;
+    if (!text) {
+      if (!ctx.hasUI) throw new Error(USAGE);
+      text = (await ctx.ui.editor("Handoff message for the next run"))?.trim();
+      if (!text) return undefined;
+    }
+    if (text.length > MAX_TEXT) {
+      throw new Error(`The handoff message exceeds ${MAX_TEXT} characters.`);
+    }
+    if (pending || !ctx.isIdle()) {
+      throw new Error("The agent started while the handoff was being prepared.");
+    }
+    if (!ctx.model) throw new Error("A model is required to continue after a handoff.");
+    if ((mode === "fork" || mode === "new") && !manager.getSessionFile()) {
+      throw new Error(
+        "Fork and new require a persisted session so the source history remains recoverable. Run Pi without --no-session.",
+      );
+    }
+    if (ctx.hasPendingMessages()) throw new Error("Handle queued user input before handing off.");
+    if (ctx.mode === "tui" && ctx.ui.getEditorText().trim()) {
+      throw new Error("Finish or save the editor draft before handing off.");
+    }
+    const sourceId = manager.getLeafId();
+    if (!sourceId || !lastCheckpoint(manager)) {
+      throw new Error("No completed turn to hand off from yet.");
+    }
+    if (targetEntryId) requireCheckpoint(manager, targetEntryId);
+    const input: HandoffInput = {
+      expectedSessionId: manager.getSessionId(),
+      mode,
+      ...(targetEntryId ? { targetEntryId } : {}),
+      handoff: { kind: "inline", text },
+    };
+    Value.Assert(handoffSchema, input);
+    validateHandoff(input);
+    return {
+      id: randomUUID(),
+      author: "user",
+      input,
+      prepared: await prepareHandoff(input, ctx.cwd),
+      sourceId,
+      epoch,
+      applying: false,
+    };
+  }
+
+  pi.registerCommand(COMMAND, {
+    description:
+      "Start a new session, fork, return to a checkpoint, or compact, then continue with your message",
+    getArgumentCompletions(prefix) {
+      if (/\s/.test(prefix)) return null;
+      const items = MODES.filter((item) => item.mode.startsWith(prefix)).map((item) => ({
+        value: item.mode,
+        label: item.mode,
+        description: item.description,
+      }));
+      return items.length ? items : null;
+    },
+    async handler(args, ctx) {
+      const [action, id, ...extra] = args.trim().split(/\s+/);
+      if (action === "apply") {
+        // The extension dispatches this form for the session_handoff call it just accepted.
+        const request = pending;
+        if (
+          !request ||
+          request.author !== "agent" ||
+          request.id !== id ||
+          extra.length ||
+          request.applying
+        ) {
+          ctx.ui.notify(
+            "No matching pending agent handoff. Saved operations are never replayed automatically.",
+            "warning",
+          );
           return;
         }
-        if (request.input.mode === "navigate") {
-          const result = await ctx.navigateTree(request.input.targetEntryId ?? "", {
-            summarize: false,
-          });
-          if (result.cancelled) throw new Error("Navigation was cancelled.");
-          if (ctx.sessionManager.getLeafId() !== request.input.targetEntryId) {
-            throw new Error("Another extension changed the destination before handoff delivery.");
-          }
-        } else {
-          await new Promise<void>((resolve, reject) => {
-            ctx.compact({
-              ...(request.input.compactionInstructions
-                ? { customInstructions: request.input.compactionInstructions }
-                : {}),
-              onComplete: () => {
-                resolve();
-              },
-              onError: reject,
-            });
-          });
-        }
-        if (
-          ctx.sessionManager.getSessionId() !== request.input.expectedSessionId ||
-          epoch !== request.epoch ||
-          !ctx.isIdle() ||
-          ctx.hasPendingMessages()
-        ) {
-          throw new Error(
-            "Input or session state changed after the operation. Handoff was not delivered.",
-          );
-        }
-        await verifyFindings(request.prepared);
-        if (!ctx.isIdle() || epoch !== request.epoch) {
-          throw new Error("Input arrived before handoff delivery.");
-        }
-        record(request, "dispatched");
-        pending = undefined;
-        pi.sendMessage(
-          {
-            ...message,
-            content: `Current Pi session: ${ctx.sessionManager.getSessionId()}.\n${message.content}`,
-          },
-          { triggerTurn: true },
-        );
-        await ctx.waitForIdle();
-      } catch (error) {
-        // Replacement invalidates old session APIs. Its failure is reported by Pi's command runner.
-        if (replaced || pending !== request) throw error;
-        record(request, "failed", { error: errorText(error) });
-        pending = undefined;
-        pi.sendMessage(
-          {
-            customType: INFO_TYPE,
-            content: `Session handoff ${request.id} stopped: ${errorText(error)} No automatic retry was attempted. Inspect the current session before continuing.`,
-            display: true,
-          },
-          { triggerTurn: false },
-        );
-        ctx.ui.notify(errorText(error), "error");
+        await apply(request, ctx);
+        return;
       }
+      let request: Request | undefined;
+      try {
+        request = await userRequest(args, ctx);
+      } catch (error) {
+        ctx.ui.notify(errorText(error), "error");
+        return;
+      }
+      if (!request) {
+        ctx.ui.notify("Handoff cancelled.", "info");
+        return;
+      }
+      record(request, "accepted", {
+        input: request.input,
+        prepared: request.prepared,
+        author: "user",
+      });
+      pending = request;
+      await apply(request, ctx);
     },
   });
 
@@ -497,25 +629,19 @@ export default function sessionTools(pi: ExtensionAPI): void {
       if (startEpoch !== epoch || ctx.hasPendingMessages()) {
         throw new Error("Input changed while preparing the handoff.");
       }
-      const commands = pi
-        .getCommands()
-        .filter(
-          (command) =>
-            command.name === APPLY_COMMAND || command.name.startsWith(`${APPLY_COMMAND}:`),
-        );
-      if (commands.length !== 1)
-        throw new Error("Internal handoff command is unavailable or ambiguous.");
+      if (!ownCommand(pi))
+        throw new Error("The /session-handoff command is unavailable or ambiguous.");
       const request: Request = {
         id: randomUUID(),
+        author: "agent",
         input,
         prepared,
-        assistantId,
+        sourceId: assistantId,
         epoch,
         applying: false,
         ...(signal ? { signal } : {}),
-        command: commands[0]?.name ?? APPLY_COMMAND,
       };
-      record(request, "accepted", { input, prepared, assistantId });
+      record(request, "accepted", { input, prepared, assistantId, author: "agent" });
       pending = request;
       // agent_settled dispatches the command. Never await it from this tool.
       return {

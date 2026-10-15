@@ -199,6 +199,81 @@ test(
 );
 
 test(
+  "live packaged Pi CLI forks with a typed /session-handoff and continues from the user's message",
+  { skip: process.env["PI_SESSION_TOOLS_LIVE_TEST"] !== "1", timeout: 300_000 },
+  async (t) => {
+    const { temporary, cli, env, extension } = await packagedCli(t);
+    const cwd = join(temporary, "command");
+    const sessions = join(cwd, "sessions");
+    await mkdir(sessions, { recursive: true });
+    const source = join(sessions, "source.jsonl");
+    const args = [
+      cli,
+      "--print",
+      "--offline",
+      "--no-extensions",
+      "--no-skills",
+      "--no-prompt-templates",
+      "--no-context-files",
+      "--tools",
+      "session_inspect,session_handoff",
+      "--provider",
+      "openai-codex",
+      "--model",
+      "gpt-5.6-luna",
+      "--thinking",
+      "low",
+      "--session",
+      source,
+      "--session-dir",
+      sessions,
+      "-e",
+      extension,
+    ];
+    const seed = await exec(
+      process.execPath,
+      [...args, "Remember the synthetic code word LANTERN. Reply with only: noted."],
+      { cwd, env, timeout: 90_000, maxBuffer: 2 * 1024 * 1024 },
+    );
+    assert.doesNotMatch(seed.stderr, /Failed to load extension|Extension error|not a function/);
+    const before = await readFile(source, "utf8");
+    const manager = SessionManager.open(source);
+    const checkpoint = lastCheckpoint(manager);
+    assert.ok(checkpoint);
+    const result = await exec(
+      process.execPath,
+      [
+        ...args,
+        `/session-handoff fork ${checkpoint.entry.id} Reply with only the code word from earlier, ` +
+          "followed by _FORKED. Do not call tools.",
+      ],
+      { cwd, env, timeout: 150_000, maxBuffer: 2 * 1024 * 1024 },
+    );
+    assert.match(result.stdout, /LANTERN_FORKED/);
+    assert.doesNotMatch(result.stderr, /Failed to load extension|Extension error|not a function/);
+    assert.ok((await readFile(source, "utf8")).startsWith(before), "Source history is preserved.");
+    const destinations = [];
+    for (const file of await readdir(sessions)) {
+      if (!file.endsWith(".jsonl")) continue;
+      const session = SessionManager.open(join(sessions, file));
+      if (session.getSessionId() !== manager.getSessionId()) destinations.push(session);
+    }
+    assert.equal(destinations.length, 1, "The fork creates exactly one session.");
+    const destination = destinations[0];
+    assert.ok(destination);
+    const handoffs = destination
+      .getBranch()
+      .filter((entry) => entry.type === "custom_message" && entry.customType === HANDOFF_TYPE);
+    assert.equal(handoffs.length, 1);
+    assert.match(JSON.stringify(handoffs[0]), /User-authored session handoff/);
+    const assistant = destination.buildSessionContext().messages.at(-1);
+    assert.ok(assistant?.role === "assistant");
+    assert.equal(assistant.stopReason, "stop", "The continuation must complete successfully.");
+    t.diagnostic(`Pi ${piVersion}: live typed /session-handoff fork and continuation passed.`);
+  },
+);
+
+test(
   "live packaged Pi CLI gives codemode scripts structured inspections but not session_handoff",
   { skip: process.env["PI_SESSION_TOOLS_LIVE_TEST"] !== "1", timeout: 300_000 },
   async (t) => {

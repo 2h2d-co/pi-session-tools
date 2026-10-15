@@ -87,15 +87,21 @@ test("symlink resolution is stable and inline text preserves current restriction
     dir,
   );
   assert.ok(prepared.file?.path.endsWith("findings.md"));
-  const text = handoffText(await prepareHandoff(inline, dir), {
+  const origin = {
     sessionId: "origin",
     entryId: "checkpoint",
     sessionFile: "/sessions/origin.jsonl",
-  });
+  };
+  const text = handoffText(await prepareHandoff(inline, dir), origin, "agent");
+  assert.match(text, /^\[Agent-authored session handoff\]/);
   assert.match(text, /No schema changes/);
   assert.match(text, /not restored or isolated/);
   assert.match(text, /session=origin entry=checkpoint/);
   assert.match(text, /does not grant new permission/);
+  const user = handoffText(await prepareHandoff(inline, dir), origin, "user");
+  assert.match(user, /^\[User-authored session handoff\]/);
+  assert.match(user, /not restored or isolated/);
+  assert.doesNotMatch(user, /does not grant new permission/);
 });
 
 test(

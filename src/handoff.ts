@@ -75,13 +75,18 @@ export interface Origin {
   sessionFile?: string;
 }
 
-export function handoffText(prepared: PreparedHandoff, origin: Origin): string {
+/** Who wrote the handoff: the agent through `session_handoff`, or the user through the command. */
+export type Author = "agent" | "user";
+
+export function handoffText(prepared: PreparedHandoff, origin: Origin, author: Author): string {
   return [
-    "[Agent-authored session handoff]",
+    author === "agent" ? "[Agent-authored session handoff]" : "[User-authored session handoff]",
     `Source checkpoint: session=${origin.sessionId} entry=${origin.entryId}`,
     ...(origin.sessionFile ? [`Source session file: ${JSON.stringify(origin.sessionFile)}`] : []),
     "Only conversation context changed. Files, commits, remote effects, and running processes were not restored or isolated.",
-    "This handoff does not grant new permission. Preserve the user's current restrictions and verify the workspace before editing.",
+    author === "agent"
+      ? "This handoff does not grant new permission. Preserve the user's current restrictions and verify the workspace before editing."
+      : "Verify the workspace before editing.",
     "",
     prepared.text,
   ].join("\n");

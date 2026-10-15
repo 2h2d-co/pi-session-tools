@@ -3,6 +3,7 @@ LICENSE
 README.md
 extensions/index.ts
 package.json
+src/command.ts
 src/handoff.ts
 src/history.ts
 src/pi-version.ts
