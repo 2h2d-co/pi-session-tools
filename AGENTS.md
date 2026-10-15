@@ -1,9 +1,10 @@
 # Pi session tools
 
-- This package exposes `session_inspect`, `session_handoff`, and the `/session-handoff` command.
-- `/session-handoff` serves users and the extension. Its `apply <operation-id>` form applies
+- This package exposes `session_inspect`, `session_handoff`, and the `/handoff` command.
+- `/handoff` serves users and the extension. Its `apply <operation-id>` form applies
   only the agent request pending in memory. User handoffs keep every safety check agent
-  handoffs have.
+  handoffs have. Keep the user-facing name `/handoff`. Find this extension's copy by its
+  description, because Pi renames duplicate commands to `handoff:N`.
 - Support Pi `>=1.2.0 <1.3.0`. Keep Pi peer ranges bounded below the next Pi
   minor release and pin development dependencies to the version actually
   tested. Do not keep fallbacks for Pi versions below the minimum.

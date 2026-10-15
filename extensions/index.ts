@@ -36,7 +36,9 @@ import {
   type InspectOutput,
 } from "../src/schemas.ts";
 
-const COMMAND = "session-handoff";
+const COMMAND = "handoff";
+const COMMAND_DESCRIPTION =
+  "Start a new session, fork, return to a checkpoint, or compact, then continue with your message";
 const MAX_TEXT = 16000;
 const INFO_TYPE = "pi-session-tools:notice";
 type NewSessionOptions = NonNullable<Parameters<ExtensionCommandContext["newSession"]>[0]>;
@@ -105,11 +107,18 @@ function assertSoleCall(ctx: ExtensionContext, toolCallId: string): string {
   return entry.id;
 }
 
-/** The command's invocation name. Pi suffixes duplicate names, such as `session-handoff:2`. */
+/**
+ * The command's invocation name. When another extension also registers `handoff`, Pi names the
+ * copies `handoff:1`, `handoff:2`, and so on in load order. The description identifies ours.
+ */
 function ownCommand(pi: ExtensionAPI): string | undefined {
   const commands = pi
     .getCommands()
-    .filter((command) => command.name === COMMAND || command.name.startsWith(`${COMMAND}:`));
+    .filter(
+      (command) =>
+        (command.name === COMMAND || command.name.startsWith(`${COMMAND}:`)) &&
+        command.description === COMMAND_DESCRIPTION,
+    );
   return commands.length === 1 ? commands[0]?.name : undefined;
 }
 
@@ -272,7 +281,7 @@ export default function sessionTools(pi: ExtensionAPI): void {
     if (!command) {
       record(request, "failed", { error: "Handoff command is unavailable or ambiguous." });
       pending = undefined;
-      ctx.ui.notify("Handoff stopped: /session-handoff is unavailable or ambiguous.", "error");
+      ctx.ui.notify("Handoff stopped: /handoff is unavailable or ambiguous.", "error");
       return;
     }
     // This event is outside the active run. Pi defers prompts sent from
@@ -528,8 +537,7 @@ export default function sessionTools(pi: ExtensionAPI): void {
   }
 
   pi.registerCommand(COMMAND, {
-    description:
-      "Start a new session, fork, return to a checkpoint, or compact, then continue with your message",
+    description: COMMAND_DESCRIPTION,
     getArgumentCompletions(prefix) {
       if (/\s/.test(prefix)) return null;
       const items = MODES.filter((item) => item.mode.startsWith(prefix)).map((item) => ({
@@ -629,8 +637,7 @@ export default function sessionTools(pi: ExtensionAPI): void {
       if (startEpoch !== epoch || ctx.hasPendingMessages()) {
         throw new Error("Input changed while preparing the handoff.");
       }
-      if (!ownCommand(pi))
-        throw new Error("The /session-handoff command is unavailable or ambiguous.");
+      if (!ownCommand(pi)) throw new Error("The /handoff command is unavailable or ambiguous.");
       const request: Request = {
         id: randomUUID(),
         author: "agent",

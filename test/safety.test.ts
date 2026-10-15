@@ -169,7 +169,7 @@ test("interrupted journal entries are inspectable but are never replayed on resu
       },
     ]);
     await runtime.session.prompt("Resume");
-    await runtime.session.prompt("/session-handoff apply interrupted-example");
+    await runtime.session.prompt("/handoff apply interrupted-example");
     assert.equal(runtime.session.sessionId, source.getSessionId());
     assert.equal(faux.state.callCount, 2);
     assert.deepEqual(errors, []);

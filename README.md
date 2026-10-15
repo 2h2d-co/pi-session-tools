@@ -6,7 +6,7 @@ different conversation context.
 - **`session_inspect`** finds or reads checkpoints across the current session tree.
 - **`session_handoff`** navigates, forks, compacts, or starts a fresh session,
   then appends a handoff and resumes the agent.
-- **`/session-handoff`** does the same for you: type a mode and a message,
+- **`/handoff`** does the same for you: type a mode and a message,
   and the agent continues from the new context.
 
 A checkpoint is the last message of a completed assistant response and its tool
@@ -196,7 +196,7 @@ finish. The initial result says **accepted**, not completed.
 
 1. Validate the request, destination, and absence of pending user input.
 2. Record the request and terminate the tool batch.
-3. At `agent_settled`, run `/session-handoff apply <operation-id>`.
+3. At `agent_settled`, run `/handoff apply <operation-id>`.
 4. Navigate, fork, compact, or create the new session through Pi's public APIs.
 5. Append exactly one handoff after success and start the next agent run.
 
@@ -227,13 +227,13 @@ The `apply` form applies only the agent request that is still waiting in
 memory. Typing it with any other ID changes nothing, so it cannot replay a
 saved request.
 
-## `/session-handoff` command
+## `/handoff` command
 
 ```text
-/session-handoff new <message>
-/session-handoff fork <checkpoint-id> <message>
-/session-handoff navigate <checkpoint-id> <message>
-/session-handoff compact <message>
+/handoff new <message>
+/handoff fork <checkpoint-id> <message>
+/handoff navigate <checkpoint-id> <message>
+/handoff compact <message>
 ```
 
 The command performs the same four modes for you. Your message becomes the
@@ -255,6 +255,11 @@ agent handoff: no queued input, no unsubmitted editor draft, a valid
 checkpoint, and a persisted session for `fork` and `new`. It records the same
 operation journal.
 
+If another extension also registers `/handoff`, Pi lists the two commands as
+`/handoff:1` and `/handoff:2` in load order. Type the one whose description
+starts with "Start a new session, fork". Agent handoffs find this extension's
+command by that description and keep working.
+
 ## Safety boundaries
 
 - Files, Git commits, remote side effects, and running processes are unchanged.
@@ -266,7 +271,7 @@ operation journal.
 - Carry current user restrictions, changed paths, validation results, active
   process handles, remaining work, and next steps in the handoff or findings file.
 - Agent-authored handoffs do not grant new permissions. Handoffs you send with
-  `/session-handoff` are your own instructions.
+  `/handoff` are your own instructions.
 - Other extensions retain their own lifecycle and side effects. Review any
   extension that restores files during navigation.
 
@@ -296,7 +301,7 @@ directory is in effect. Other Pi launches keep their own environment.
 Before releasing, run `npm run test:live` with an existing Pi Codex login.
 It exercises inspection, all four handoff modes, automatic continuation, and
 source-history preservation through the shipped Pi CLI. A second test forks
-with a typed `/session-handoff` command. A third test loads Pi's built-in
+with a typed `/handoff` command. A third test loads Pi's built-in
 `codemode` extension. It checks that a script receives a structured
 `session_inspect` response and cannot reach `session_handoff`. The tests use
 synthetic conversations and isolated sessions. They make billed requests.

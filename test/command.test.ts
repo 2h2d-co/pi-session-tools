@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fauxAssistantMessage, type FauxResponseFactory } from "@earendil-works/pi-ai";
+import {
+  fauxAssistantMessage,
+  fauxToolCall,
+  type FauxResponseFactory,
+} from "@earendil-works/pi-ai";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { USAGE, parseHandoffCommand } from "../src/command.ts";
 import { HANDOFF_TYPE, JOURNAL_TYPE, lastCheckpoint } from "../src/history.ts";
@@ -58,7 +62,7 @@ test("command arguments name a mode, an existing checkpoint, and a message", () 
 test("the command completes mode names but not the extension's apply form", async () => {
   const { runtime } = await testRuntime();
   try {
-    const command = runtime.session.extensionRunner.getCommand("session-handoff");
+    const command = runtime.session.extensionRunner.getCommand("handoff");
     assert.ok(command?.getArgumentCompletions);
     const values = async (prefix: string) =>
       ((await command.getArgumentCompletions?.(prefix)) ?? []).map((item) => item.value);
@@ -93,13 +97,13 @@ for (const mode of ["new", "fork", "navigate", "compact"] as const) {
       };
       faux.setResponses([resume]);
       const target = mode === "fork" || mode === "navigate" ? ` ${checkpoint.entry.id}` : "";
-      await runtime.session.prompt(`/session-handoff ${mode}${target} Implement plan B with tests`);
+      await runtime.session.prompt(`/handoff ${mode}${target} Implement plan B with tests`);
       await runtime.session.waitForIdle();
       assert.match(
         JSON.stringify(runtime.session.messages.at(-1)),
         /Continued from the user's handoff/,
       );
-      const delivered = handoffs(runtime.session.sessionManager.getBranch());
+      const delivered = handoffs(runtime.session.sessionManager.getEntries());
       assert.equal(delivered.length, 1);
       const details: unknown = delivered[0]?.type === "custom_message" && delivered[0].details;
       assert.ok(typeof details === "object" && details !== null && "author" in details);
@@ -159,7 +163,7 @@ test("omitted command parts are chosen interactively", async () => {
         return fauxAssistantMessage("Forked");
       },
     ]);
-    await runtime.session.prompt("/session-handoff");
+    await runtime.session.prompt("/handoff");
     await runtime.session.waitForIdle();
     assert.deepEqual(titles, [
       "Hand off this conversation",
@@ -186,9 +190,9 @@ test("a cancelled choice or a missing message without a UI changes nothing", asy
     faux.setResponses([fauxAssistantMessage("Plan")]);
     await runtime.session.prompt("Plan");
     const entries = runtime.session.sessionManager.getEntries().length;
-    await runtime.session.prompt("/session-handoff");
-    await runtime.session.prompt("/session-handoff restart");
-    await runtime.session.prompt("/session-handoff apply not-pending");
+    await runtime.session.prompt("/handoff");
+    await runtime.session.prompt("/handoff restart");
+    await runtime.session.prompt("/handoff apply not-pending");
     assert.deepEqual(notices, [
       "Handoff cancelled.",
       USAGE,
@@ -206,7 +210,7 @@ test("a cancelled choice or a missing message without a UI changes nothing", asy
     print.faux.setResponses([fauxAssistantMessage("Plan")]);
     await print.runtime.session.prompt("Plan");
     const entries = print.runtime.session.sessionManager.getEntries().length;
-    await print.runtime.session.prompt("/session-handoff new");
+    await print.runtime.session.prompt("/handoff new");
     assert.equal(print.runtime.session.sessionManager.getEntries().length, entries);
     assert.equal(print.faux.state.callCount, 1);
   } finally {
@@ -222,15 +226,72 @@ test("a typed handoff needs a completed turn and a persisted session for fork an
     },
   });
   try {
-    await runtime.session.prompt("/session-handoff compact Continue");
+    await runtime.session.prompt("/handoff compact Continue");
     faux.setResponses([fauxAssistantMessage("Plan")]);
     await runtime.session.prompt("Plan");
-    await runtime.session.prompt("/session-handoff new Continue");
+    await runtime.session.prompt("/handoff new Continue");
     assert.deepEqual(notices, [
       "No completed turn to hand off from yet.",
       "Fork and new require a persisted session so the source history remains recoverable. Run Pi without --no-session.",
     ]);
     assert.equal(handoffs(runtime.session.sessionManager.getEntries()).length, 0);
+  } finally {
+    await runtime.dispose();
+  }
+});
+
+test("agent and typed handoffs find this extension's command when another extension also registers /handoff", async () => {
+  let otherCalls = 0;
+  const { runtime, faux, errors } = await testRuntime((pi) => {
+    pi.registerCommand("handoff", {
+      description: "Another extension's handoff",
+      handler: async () => {
+        otherCalls++;
+      },
+    });
+  });
+  try {
+    const names = runtime.session.extensionRunner
+      .getRegisteredCommands()
+      .filter((command) => command.name === "handoff")
+      .map((command) => command.invocationName);
+    assert.equal(names.length, 2);
+    const ours = runtime.session.extensionRunner
+      .getRegisteredCommands()
+      .find((command) => command.name === "handoff" && command.description?.startsWith("Start"));
+    assert.ok(ours);
+    assert.match(ours.invocationName, /^handoff:\d$/);
+    faux.setResponses([fauxAssistantMessage("Plan")]);
+    await runtime.session.prompt("Plan");
+    const checkpoint = lastCheckpoint(runtime.session.sessionManager);
+    assert.ok(checkpoint);
+    faux.setResponses([
+      fauxAssistantMessage(
+        fauxToolCall("session_handoff", {
+          expectedSessionId: runtime.session.sessionId,
+          mode: "navigate",
+          targetEntryId: checkpoint.entry.id,
+          handoff: { kind: "inline", text: "Agent continuation" },
+        }),
+      ),
+      fauxAssistantMessage("Continued after the agent handoff"),
+    ]);
+    await runtime.session.prompt("Plan and hand off");
+    await runtime.session.waitForIdle();
+    faux.setResponses([fauxAssistantMessage("Continued after the typed handoff")]);
+    await runtime.session.prompt(
+      `/${ours.invocationName} navigate ${checkpoint.entry.id} Typed continuation`,
+    );
+    await runtime.session.waitForIdle();
+    // Both navigate to the same checkpoint, so each handoff sits on its own branch.
+    const delivered = handoffs(runtime.session.sessionManager.getEntries()).map((entry) =>
+      JSON.stringify(entry),
+    );
+    assert.equal(delivered.length, 2);
+    assert.match(delivered[0] ?? "", /Agent-authored session handoff/);
+    assert.match(delivered[1] ?? "", /User-authored session handoff/);
+    assert.equal(otherCalls, 0);
+    assert.deepEqual(errors, []);
   } finally {
     await runtime.dispose();
   }

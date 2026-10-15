@@ -10,7 +10,7 @@ export const MODES: readonly { mode: Mode; description: string }[] = [
 ];
 
 export const USAGE =
-  "Usage: /session-handoff new|compact <message>, or /session-handoff fork|navigate <checkpoint-id> <message>. Omitted parts are asked for interactively.";
+  "Usage: /handoff new|compact <message>, or /handoff fork|navigate <checkpoint-id> <message>. Omitted parts are asked for interactively.";
 
 export interface ParsedCommand {
   mode?: Mode;

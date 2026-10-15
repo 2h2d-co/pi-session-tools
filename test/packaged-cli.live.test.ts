@@ -199,7 +199,7 @@ test(
 );
 
 test(
-  "live packaged Pi CLI forks with a typed /session-handoff and continues from the user's message",
+  "live packaged Pi CLI forks with a typed /handoff and continues from the user's message",
   { skip: process.env["PI_SESSION_TOOLS_LIVE_TEST"] !== "1", timeout: 300_000 },
   async (t) => {
     const { temporary, cli, env, extension } = await packagedCli(t);
@@ -244,7 +244,7 @@ test(
       process.execPath,
       [
         ...args,
-        `/session-handoff fork ${checkpoint.entry.id} Reply with only the code word from earlier, ` +
+        `/handoff fork ${checkpoint.entry.id} Reply with only the code word from earlier, ` +
           "followed by _FORKED. Do not call tools.",
       ],
       { cwd, env, timeout: 150_000, maxBuffer: 2 * 1024 * 1024 },
@@ -269,7 +269,7 @@ test(
     const assistant = destination.buildSessionContext().messages.at(-1);
     assert.ok(assistant?.role === "assistant");
     assert.equal(assistant.stopReason, "stop", "The continuation must complete successfully.");
-    t.diagnostic(`Pi ${piVersion}: live typed /session-handoff fork and continuation passed.`);
+    t.diagnostic(`Pi ${piVersion}: live typed /handoff fork and continuation passed.`);
   },
 );
 

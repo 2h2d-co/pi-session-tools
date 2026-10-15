@@ -6,14 +6,14 @@ All notable changes are documented here using Keep a Changelog.
 
 ### Added
 
-- `/session-handoff new|fork|navigate|compact` lets you hand off the conversation yourself. Your
+- `/handoff new|fork|navigate|compact` lets you hand off the conversation yourself. Your
   message starts the next run as a user-authored handoff. In the interactive UI and RPC, omitted
   parts are chosen in dialogs: the mode, a checkpoint from a list, and the message in an editor.
 
 ### Changed
 
 - The internal `/session-tools-apply-handoff` command is gone. Agent handoffs now run through
-  `/session-handoff apply <operation-id>`, which applies only the request waiting in memory.
+  `/handoff apply <operation-id>`, which applies only the request waiting in memory.
 - Require Pi `>=1.2.0 <1.3.0`.
 - Fork and new-session handoffs start the continuation from the saved handoff message, as
   navigation and compaction already did. The extra `[Agent-authored continuation]` user prompt
