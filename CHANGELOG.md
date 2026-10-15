@@ -7,6 +7,9 @@ All notable changes are documented here using Keep a Changelog.
 ### Changed
 
 - Require Pi `>=1.2.0 <1.3.0`.
+- Fork and new-session handoffs start the continuation from the saved handoff message, as
+  navigation and compaction already did. The extra `[Agent-authored continuation]` user prompt
+  is gone, so input handlers no longer see or stop that continuation.
 
 ## 0.0.7 - 2026-10-08
 

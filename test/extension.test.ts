@@ -227,16 +227,15 @@ for (const mode of ["new", "fork"] as const) {
   test(`${mode} prepares current prompt sections and tool changes before its first continuation`, async () => {
     let phase = "initial";
     const inputs: string[] = [];
+    const starts: string[] = [];
     const { runtime, faux, errors } = await testRuntime((pi) => {
       pi.on("input", (event) => {
         if (event.source === "extension") inputs.push(event.text);
       });
       pi.on("before_agent_start", (event) => {
         event.systemPromptOptions.sections["session_tools_test"] = `Policy phase: ${phase}`;
-        if (
-          event.messageType === "user" &&
-          event.prompt.includes("[Agent-authored continuation]")
-        ) {
+        starts.push(event.messageType === "user" ? "user" : event.message.customType);
+        if (event.messageType === "custom" && event.message.customType === HANDOFF_TYPE) {
           event.systemPromptOptions.selectedTools = event.systemPromptOptions.selectedTools.filter(
             (name) => name !== "session_inspect",
           );
@@ -251,6 +250,7 @@ for (const mode of ["new", "fork"] as const) {
       phase = "current";
       let prompt = "";
       let tools: string[] = [];
+      let lastMessages = "";
       faux.setResponses([
         fauxAssistantMessage(
           fauxToolCall("session_handoff", {
@@ -263,6 +263,8 @@ for (const mode of ["new", "fork"] as const) {
         (context) => {
           prompt = getCurrentSystemPrompt(context.messages);
           tools = getCurrentTools(context.messages).map((tool) => tool.name);
+          // The session-ID notice follows the handoff that starts the run.
+          lastMessages = JSON.stringify(context.messages.slice(-2));
           return fauxAssistantMessage("Resumed with current instructions");
         },
       ]);
@@ -271,8 +273,12 @@ for (const mode of ["new", "fork"] as const) {
       assert.doesNotMatch(prompt, /Policy phase: initial/);
       assert.ok(prompt.includes(PROJECT_INSTRUCTIONS));
       assert.deepEqual(tools, ["session_handoff"]);
-      assert.equal(inputs.length, 1);
-      assert.match(inputs[0] ?? "", /not a new user request or additional authorization/);
+      // The saved handoff starts the continuation; no extra user prompt is submitted.
+      assert.deepEqual(inputs, []);
+      assert.deepEqual(starts, ["user", "user", HANDOFF_TYPE]);
+      assert.match(lastMessages, /Agent-authored session handoff/);
+      assert.match(lastMessages, /Carry current restrictions/);
+      assert.doesNotMatch(JSON.stringify(runtime.session.messages), /Agent-authored continuation/);
       assert.deepEqual(errors, []);
     } finally {
       await runtime.dispose();

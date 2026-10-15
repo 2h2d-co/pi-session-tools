@@ -203,18 +203,17 @@ before it resolves idle waits, so its print and JSON hosts do not exit before
 the handoff completes. Forks and new sessions use Pi's
 fresh replacement context. Continuation starts after the host finishes its
 replacement action, so a late editor reset cannot erase a new draft.
-For forks and new sessions, the extension saves the handoff first, then submits
-a short, explicitly agent-authored continuation prompt. This runs Pi's normal
-input handlers and prompt preparation before the first response. It preserves
-system instructions, project instructions, and extension prompt/tool changes.
-The continuation prompt grants no new authorization.
-Compaction waits for its completion callback.
+In every mode, the handoff message itself starts the next run. The model
+receives it as a user-role message, but the session records it as an
+extension message, not as user input, so input handlers do not see it. Pi
+prepares the run like a prompt, so it carries current system instructions,
+project instructions, and extension prompt and tool changes. The handoff grants
+no new authorization. Compaction waits for its completion callback.
 
 Incoming user input, unsubmitted editor drafts, session changes, failed
 validation, or cancellation from another extension stop a pending handoff.
-Input handlers can also stop the replacement continuation after its handoff
-has been saved. Already-completed context changes are
-not silently undone. Source history remains available.
+Already-completed context changes are not silently undone. Source history
+remains available.
 
 Operation records use unique IDs. Reloading or resuming a session never replays
 unfinished requests automatically. Inspect the current context and source
