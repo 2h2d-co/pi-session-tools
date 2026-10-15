@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile, type ExecFileOptions } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,7 +9,8 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import manifest from "../package.json" with { type: "json" };
-import { HANDOFF_TYPE, lastCheckpoint } from "../src/history.ts";
+import { HANDOFF_TYPE, NOTICE_TYPE, lastCheckpoint } from "../src/history.ts";
+import { errorLog } from "./error-log.ts";
 import { archiveEntries, expectedArchiveEntries, packageArchive } from "./package-archive.ts";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -62,14 +64,61 @@ async function packagedCli(t: TestContext) {
       compaction: { enabled: false, keepRecentTokens: 1 },
     }),
   );
-  return { temporary, cli, env, extension: join(temporary, "package") };
+  return { temporary, cli, env, extension: join(temporary, "package"), pi: piRunner(t) };
+}
+
+/**
+ * Run the Pi CLI in print mode and report every error it meets, even when the test passes. Print
+ * mode drops extension UI notices, so this reads extension error lines from stderr and failed
+ * responses and stop notices from the session files in `sessions`.
+ */
+function piRunner(t: TestContext) {
+  const errors = errorLog(t);
+  const reported = new Set<string>();
+  return async (sessions: string, args: string[], options: ExecFileOptions) => {
+    let stderr = "";
+    try {
+      const result = await exec(process.execPath, args, options);
+      stderr = result.stderr;
+      return result;
+    } catch (error) {
+      if (typeof error === "object" && error !== null && "stderr" in error) {
+        stderr = String(error.stderr);
+      }
+      throw error;
+    } finally {
+      const messages: unknown[] = [];
+      for (const file of existsSync(sessions) ? await readdir(sessions) : []) {
+        if (!file.endsWith(".jsonl")) continue;
+        for (const entry of SessionManager.open(join(sessions, file)).getEntries()) {
+          if (reported.has(`${file}:${entry.id}`)) continue;
+          reported.add(`${file}:${entry.id}`);
+          if (entry.type === "message") messages.push(entry.message);
+          if (
+            entry.type === "custom_message" &&
+            entry.customType === NOTICE_TYPE &&
+            entry.display
+          ) {
+            const { content } = entry;
+            errors.notice(
+              typeof content === "string"
+                ? content
+                : content.map((block) => (block.type === "text" ? block.text : "")).join(""),
+              "error",
+            );
+          }
+        }
+      }
+      errors.printRun(stderr, messages);
+    }
+  };
 }
 
 test(
   "live packaged Pi CLI completes every handoff mode without losing source history",
   { skip: process.env["PI_SESSION_TOOLS_LIVE_TEST"] !== "1", timeout: 600_000 },
   async (t) => {
-    const { temporary, cli, env, extension } = await packagedCli(t);
+    const { temporary, cli, env, extension, pi } = await packagedCli(t);
     for (const mode of ["navigate", "fork", "compact", "new"]) {
       const cwd = join(temporary, mode);
       const sessions = join(cwd, "sessions");
@@ -102,8 +151,8 @@ test(
         "--append-system-prompt",
         `The completion marker is ${marker}. After the agent-authored handoff, reply with it.`,
       ];
-      const seed = await exec(
-        process.execPath,
+      const seed = await pi(
+        sessions,
         [
           ...args,
           "Read facts.txt with the read tool and call session_inspect with view overview once. " +
@@ -151,8 +200,8 @@ test(
             "Do not call tools or perform another handoff.",
         },
       };
-      const result = await exec(
-        process.execPath,
+      const result = await pi(
+        sessions,
         [
           ...args,
           `Call session_handoff exactly once, alone, with these arguments: ${JSON.stringify(input)}`,
@@ -202,7 +251,7 @@ test(
   "live packaged Pi CLI forks with a typed /handoff and continues from the user's message",
   { skip: process.env["PI_SESSION_TOOLS_LIVE_TEST"] !== "1", timeout: 300_000 },
   async (t) => {
-    const { temporary, cli, env, extension } = await packagedCli(t);
+    const { temporary, cli, env, extension, pi } = await packagedCli(t);
     const cwd = join(temporary, "command");
     const sessions = join(cwd, "sessions");
     await mkdir(sessions, { recursive: true });
@@ -230,8 +279,8 @@ test(
       "-e",
       extension,
     ];
-    const seed = await exec(
-      process.execPath,
+    const seed = await pi(
+      sessions,
       [...args, "Remember the synthetic code word LANTERN. Reply with only: noted."],
       { cwd, env, timeout: 90_000, maxBuffer: 2 * 1024 * 1024 },
     );
@@ -240,8 +289,8 @@ test(
     const manager = SessionManager.open(source);
     const checkpoint = lastCheckpoint(manager);
     assert.ok(checkpoint);
-    const result = await exec(
-      process.execPath,
+    const result = await pi(
+      sessions,
       [
         ...args,
         `/handoff fork ${checkpoint.entry.id} Reply with only the code word from earlier, ` +
@@ -277,7 +326,7 @@ test(
   "live packaged Pi CLI gives codemode scripts structured inspections but not session_handoff",
   { skip: process.env["PI_SESSION_TOOLS_LIVE_TEST"] !== "1", timeout: 300_000 },
   async (t) => {
-    const { temporary, cli, env, extension } = await packagedCli(t);
+    const { temporary, cli, env, extension, pi } = await packagedCli(t);
     const cwd = join(temporary, "codemode");
     const sessions = join(cwd, "sessions");
     await mkdir(sessions, { recursive: true });
@@ -291,8 +340,8 @@ test(
       "  listed: ALL_TOOLS.map((tool) => tool.name).toSorted(),",
       "});",
     ].join("\n");
-    const result = await exec(
-      process.execPath,
+    const result = await pi(
+      sessions,
       [
         cli,
         "--print",

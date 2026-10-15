@@ -13,6 +13,7 @@ type ReadonlySessionManager = ExtensionContext["sessionManager"];
 export const CHECKPOINT_TYPE = "pi-session-tools:checkpoint";
 export const HANDOFF_TYPE = "pi-session-tools:handoff";
 export const JOURNAL_TYPE = "pi-session-tools:operation";
+export const NOTICE_TYPE = "pi-session-tools:notice";
 
 interface PathState {
   pending: ReadonlyMap<string, string>;

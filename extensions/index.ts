@@ -12,6 +12,7 @@ import {
   CHECKPOINT_TYPE,
   HANDOFF_TYPE,
   JOURNAL_TYPE,
+  NOTICE_TYPE,
   checkpoints,
   inspectSession,
   lastCheckpoint,
@@ -40,7 +41,6 @@ const COMMAND = "handoff";
 const COMMAND_DESCRIPTION =
   "Start a new session, fork, return to a checkpoint, or compact, then continue with your message";
 const MAX_TEXT = 16000;
-const INFO_TYPE = "pi-session-tools:notice";
 type NewSessionOptions = NonNullable<Parameters<ExtensionCommandContext["newSession"]>[0]>;
 type ReplacementContext = Parameters<NonNullable<NewSessionOptions["withSession"]>>[0];
 
@@ -199,7 +199,7 @@ export default function sessionTools(pi: ExtensionAPI): void {
   });
   pi.on("before_agent_start", (_event, ctx) => {
     const message = {
-      customType: INFO_TYPE,
+      customType: NOTICE_TYPE,
       content: [
         `Current Pi session: ${ctx.sessionManager.getSessionId()}.`,
         ...(recovery.length
@@ -450,7 +450,7 @@ export default function sessionTools(pi: ExtensionAPI): void {
       pending = undefined;
       pi.sendMessage(
         {
-          customType: INFO_TYPE,
+          customType: NOTICE_TYPE,
           content: `Session handoff ${request.id} stopped: ${errorText(error)} No automatic retry was attempted. Inspect the current session before continuing.`,
           display: true,
         },
