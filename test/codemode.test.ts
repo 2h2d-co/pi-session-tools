@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { createCodemodeExtension } from "@earendil-works/pi-coding-agent";
 import { lastCheckpoint } from "../src/history.ts";
-import { testRuntime } from "./runtime.ts";
+import { testRuntime } from "./support/runtime.ts";
 
 test("tools declare their exposure and behavior hints", async () => {
   const { runtime } = await testRuntime();

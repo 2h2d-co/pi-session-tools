@@ -8,7 +8,12 @@ import {
   type FauxResponseFactory,
 } from "@earendil-works/pi-ai";
 import { CHECKPOINT_TYPE, HANDOFF_TYPE, NOTICE_TYPE, lastCheckpoint } from "../src/history.ts";
-import { PROJECT_INSTRUCTIONS, SYSTEM_INSTRUCTIONS, testRuntime, waitUntil } from "./runtime.ts";
+import {
+  PROJECT_INSTRUCTIONS,
+  SYSTEM_INSTRUCTIONS,
+  testRuntime,
+  waitUntil,
+} from "./support/runtime.ts";
 
 test("real Pi emits non-triggering checkpoint metadata after a completed turn", async () => {
   const { runtime, faux, errors } = await testRuntime();
@@ -367,3 +372,75 @@ for (const mode of ["new", "fork"] as const) {
     }
   });
 }
+
+test("a fork keeps the checkpoints up to its fork point and nothing after it", async () => {
+  const { runtime, faux, errors } = await testRuntime();
+  try {
+    faux.setResponses([fauxAssistantMessage("First plan")]);
+    await runtime.session.prompt("One");
+    const a = lastCheckpoint(runtime.session.sessionManager)?.entry.id;
+    faux.setResponses([fauxAssistantMessage("Later work")]);
+    await runtime.session.prompt("Two");
+    const b = lastCheckpoint(runtime.session.sessionManager)?.entry.id;
+    assert.ok(a && b);
+    const sourceId = runtime.session.sessionId;
+    faux.setResponses([
+      fauxAssistantMessage(
+        fauxToolCall("session_handoff", {
+          mode: "fork",
+          targetEntryId: a,
+          handoff: { kind: "inline", text: "Continue from the first plan" },
+        }),
+      ),
+      fauxAssistantMessage(fauxToolCall("session_inspect", { view: "overview", limit: 50 })),
+      fauxAssistantMessage("Inspected the fork"),
+    ]);
+    await runtime.session.prompt("Fork at the first plan");
+    await runtime.session.waitForIdle();
+    assert.notEqual(runtime.session.sessionId, sourceId);
+    const inspected = runtime.session.messages.findLast(
+      (message) => message.role === "toolResult" && message.toolName === "session_inspect",
+    );
+    assert.ok(inspected?.role === "toolResult" && !inspected.isError);
+    const listed = JSON.stringify(inspected.content);
+    assert.match(listed, new RegExp(a));
+    assert.doesNotMatch(listed, new RegExp(b), "The fork does not list checkpoints after it.");
+
+    // B exists only in the source session, so the fork rejects it as a target.
+    faux.setResponses([
+      fauxAssistantMessage(
+        fauxToolCall("session_handoff", {
+          mode: "navigate",
+          targetEntryId: b,
+          handoff: { kind: "inline", text: "Return to the later work" },
+        }),
+      ),
+      fauxAssistantMessage("The later work is not in this fork"),
+    ]);
+    await runtime.session.prompt("Go to the later work");
+    const rejected = runtime.session.messages.findLast(
+      (message) => message.role === "toolResult" && message.toolName === "session_handoff",
+    );
+    assert.ok(rejected?.role === "toolResult" && rejected.isError);
+    assert.match(JSON.stringify(rejected.content), /not a completed turn/);
+
+    // A was copied with its ID, so the fork can return to it.
+    faux.setResponses([
+      fauxAssistantMessage(
+        fauxToolCall("session_handoff", {
+          mode: "navigate",
+          targetEntryId: a,
+          handoff: { kind: "inline", text: "Restart from the first plan" },
+        }),
+      ),
+      fauxAssistantMessage("Back at the first plan"),
+    ]);
+    await runtime.session.prompt("Go back to the first plan");
+    await runtime.session.waitForIdle();
+    assert.ok(runtime.session.sessionManager.getBranch().some((entry) => entry.id === a));
+    assert.match(JSON.stringify(runtime.session.messages.at(-1)), /Back at the first plan/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await runtime.dispose();
+  }
+});

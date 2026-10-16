@@ -10,8 +10,12 @@ import { promisify } from "node:util";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import manifest from "../package.json" with { type: "json" };
 import { HANDOFF_TYPE, NOTICE_TYPE, lastCheckpoint } from "../src/history.ts";
-import { errorLog } from "./error-log.ts";
-import { archiveEntries, expectedArchiveEntries, packageArchive } from "./package-archive.ts";
+import { errorLog } from "./support/error-log.ts";
+import {
+  archiveEntries,
+  expectedArchiveEntries,
+  packageArchive,
+} from "./support/package-archive.ts";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const piVersion = manifest.devDependencies["@earendil-works/pi-coding-agent"];

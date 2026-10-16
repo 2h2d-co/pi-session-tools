@@ -59,7 +59,7 @@ export async function testRuntime(
         noThemes: true,
         noContextFiles: true,
         additionalExtensionPaths: [
-          fileURLToPath(new URL("../extensions/index.ts", import.meta.url)),
+          fileURLToPath(new URL("../../extensions/index.ts", import.meta.url)),
         ],
         extensionFactories: [
           {

@@ -6,7 +6,7 @@ import {
   type FauxResponseFactory,
 } from "@earendil-works/pi-ai";
 import { runPrintMode } from "@earendil-works/pi-coding-agent";
-import { HANDOFF_TYPE, lastCheckpoint } from "../src/history.ts";
+import { HANDOFF_TYPE, lastCheckpoint } from "../../src/history.ts";
 import { PROJECT_INSTRUCTIONS, SYSTEM_INSTRUCTIONS, testRuntime } from "./runtime.ts";
 
 const mode = process.argv[2] ?? "new";

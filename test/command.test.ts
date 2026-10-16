@@ -8,7 +8,7 @@ import {
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { USAGE, parseHandoffCommand } from "../src/command.ts";
 import { HANDOFF_TYPE, JOURNAL_TYPE, lastCheckpoint } from "../src/history.ts";
-import { testRuntime } from "./runtime.ts";
+import { testRuntime } from "./support/runtime.ts";
 
 function handoffs(entries: readonly SessionEntry[]) {
   return entries.filter(

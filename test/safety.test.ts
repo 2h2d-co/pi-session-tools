@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { SessionManager, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { HANDOFF_TYPE, JOURNAL_TYPE, lastCheckpoint } from "../src/history.ts";
-import { testRuntime } from "./runtime.ts";
+import { testRuntime } from "./support/runtime.ts";
 
 function failed(manager: SessionManager): boolean {
   return manager.getEntries().some((entry) => {
