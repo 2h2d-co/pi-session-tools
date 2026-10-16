@@ -52,9 +52,12 @@ The agent receives compact metadata at those boundaries:
 [Session checkpoint: entry=<entry-id>]
 ```
 
-Use these IDs directly. Forks keep entry IDs, so the markers stay valid in a fork.
-The extension never puts the current session ID into the conversation, because
-Pi gives a fork a new session ID while copying its history. There is no need to query history before every handoff.
+Use these IDs directly. There is no need to query history before every handoff.
+A fork copies the path up to its fork point with the same entry IDs, so the
+checkpoints on that path stay valid in the fork. Checkpoints after the fork
+point or on other branches stay in the source session only. The extension never
+puts the current session ID into the conversation, because Pi gives a fork a
+new session ID while copying its history.
 The source checkpoint is included in the destination handoff for a direct
 return. Other branches and compacted-away checkpoints remain discoverable
 through `session_inspect`.
