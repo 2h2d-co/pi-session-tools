@@ -19,8 +19,16 @@ export const inspectSchema = Type.Object(
 
 export const handoffSchema = Type.Object(
   {
-    mode: StringEnum(["navigate", "fork", "compact", "new"]),
+    mode: StringEnum(["navigate", "fork", "compact", "new", "switch"]),
     targetEntryId: Type.Optional(entryId),
+    targetSessionFile: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: 4096,
+        description:
+          "switch only: the saved session file that contains targetEntryId. Omit both to return to the source of the latest handoff from another session.",
+      }),
+    ),
     compactionInstructions: Type.Optional(Type.String({ minLength: 1, maxLength: 8000 })),
     handoff: Type.Object(
       {
@@ -122,9 +130,20 @@ export type InspectOutput = Static<typeof inspectOutputSchema>;
 export type HandoffInput = Static<typeof handoffSchema>;
 
 export function validateHandoff(input: HandoffInput): void {
-  const targeted = input.mode === "navigate" || input.mode === "fork";
-  if (targeted !== (input.targetEntryId !== undefined)) {
-    throw new Error("targetEntryId is required only for navigate and fork.");
+  if (input.mode === "switch") {
+    if ((input.targetSessionFile === undefined) !== (input.targetEntryId === undefined)) {
+      throw new Error("switch takes targetSessionFile and targetEntryId together, or neither.");
+    }
+  } else {
+    const targeted = input.mode === "navigate" || input.mode === "fork";
+    if (targeted !== (input.targetEntryId !== undefined)) {
+      throw new Error(
+        "targetEntryId is required for navigate and fork and not allowed for compact or new.",
+      );
+    }
+    if (input.targetSessionFile !== undefined) {
+      throw new Error("targetSessionFile is allowed only for switch.");
+    }
   }
   if (input.mode !== "compact" && input.compactionInstructions !== undefined) {
     throw new Error("compactionInstructions is allowed only for compact.");

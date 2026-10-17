@@ -29,8 +29,12 @@ function phases(entries: readonly SessionEntry[]) {
   });
 }
 
-test("command arguments name a mode, an existing checkpoint, and a message", () => {
-  const known = (id: string) => id === "abcd1234";
+test("command arguments name a mode, an existing target, and a message", () => {
+  const known = {
+    isEntry: (id: string, sessionFile?: string) =>
+      sessionFile ? sessionFile !== "empty.jsonl" && id === "eeee5678" : id === "abcd1234",
+    isFile: (path: string) => ["other.jsonl", "my session.jsonl", "empty.jsonl"].includes(path),
+  };
   assert.deepEqual(parseHandoffCommand("  ", known), {});
   assert.deepEqual(parseHandoffCommand("new Keep going\nwith tests", known), {
     mode: "new",
@@ -56,6 +60,32 @@ test("command arguments name a mode, an existing checkpoint, and a message", () 
     mode: "new",
     text: "abcd1234 text",
   });
+  // switch names a session file, then a checkpoint in that file, or neither.
+  assert.deepEqual(parseHandoffCommand("switch Go back", known), {
+    mode: "switch",
+    text: "Go back",
+  });
+  assert.deepEqual(parseHandoffCommand("switch other.jsonl eeee5678 Go back", known), {
+    mode: "switch",
+    targetSessionFile: "other.jsonl",
+    targetEntryId: "eeee5678",
+    text: "Go back",
+  });
+  assert.deepEqual(parseHandoffCommand('switch "my session.jsonl" eeee5678', known), {
+    mode: "switch",
+    targetSessionFile: "my session.jsonl",
+    targetEntryId: "eeee5678",
+  });
+  assert.deepEqual(parseHandoffCommand("switch empty.jsonl eeee5678 Go back", known), {
+    mode: "switch",
+    targetSessionFile: "empty.jsonl",
+    text: "eeee5678 Go back",
+  });
+  // An unterminated quote is plain text.
+  assert.deepEqual(parseHandoffCommand('switch "other.jsonl abcd1234', known), {
+    mode: "switch",
+    text: '"other.jsonl abcd1234',
+  });
   assert.throws(() => parseHandoffCommand("restart now", known), { message: USAGE });
 });
 
@@ -66,7 +96,7 @@ test("the command completes mode names but not the extension's apply form", asyn
     assert.ok(command?.getArgumentCompletions);
     const values = async (prefix: string) =>
       ((await command.getArgumentCompletions?.(prefix)) ?? []).map((item) => item.value);
-    assert.deepEqual(await values(""), ["new", "fork", "navigate", "compact"]);
+    assert.deepEqual(await values(""), ["new", "fork", "navigate", "compact", "switch"]);
     assert.deepEqual(await values("f"), ["fork"]);
     assert.deepEqual(await values("a"), []);
     assert.deepEqual(await values("fork "), []);
@@ -218,7 +248,7 @@ test("a cancelled choice or a missing message without a UI changes nothing", asy
   }
 });
 
-test("a typed handoff needs a completed turn and a persisted session for fork and new", async () => {
+test("a typed handoff needs a completed turn and a persisted session for fork, new, and switch", async () => {
   const notices: string[] = [];
   const { runtime, faux } = await testRuntime(undefined, "rpc", false, {
     notify: (message) => {
@@ -230,10 +260,10 @@ test("a typed handoff needs a completed turn and a persisted session for fork an
     faux.setResponses([fauxAssistantMessage("Plan")]);
     await runtime.session.prompt("Plan");
     await runtime.session.prompt("/handoff new Continue");
-    assert.deepEqual(notices, [
-      "No completed turn to hand off from yet.",
-      "Fork and new require a persisted session so the source history remains recoverable. Run Pi without --no-session.",
-    ]);
+    await runtime.session.prompt("/handoff switch Continue");
+    const persisted =
+      "Fork, new, and switch require a persisted session so the source history remains recoverable. Run Pi without --no-session.";
+    assert.deepEqual(notices, ["No completed turn to hand off from yet.", persisted, persisted]);
     assert.equal(handoffs(runtime.session.sessionManager.getEntries()).length, 0);
   } finally {
     await runtime.dispose();

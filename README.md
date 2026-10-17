@@ -4,8 +4,9 @@ Pi extension for inspecting conversation checkpoints and handing work to a
 different conversation context.
 
 - **`session_inspect`** finds or reads checkpoints across the current session tree.
-- **`session_handoff`** navigates, forks, compacts, or starts a fresh session,
-  then appends a handoff and resumes the agent.
+- **`session_handoff`** navigates, forks, compacts, starts a fresh session, or
+  switches to a checkpoint in another saved session, then appends a handoff and
+  resumes the agent.
 - **`/handoff`** does the same for you: type a mode and a message,
   and the agent continues from the new context.
 
@@ -58,8 +59,9 @@ checkpoints on that path stay valid in the fork. Checkpoints after the fork
 point or on other branches stay in the source session only. The extension never
 puts the current session ID into the conversation, because Pi gives a fork a
 new session ID while copying its history.
-The source checkpoint is included in the destination handoff for a direct
-return. Other branches and compacted-away checkpoints remain discoverable
+Every handoff names its source session file and checkpoint. After a handoff to
+a new session or a fork, `switch` mode returns there directly. Other branches
+and compacted-away checkpoints in the current session remain discoverable
 through `session_inspect`.
 
 Checkpoint IDs are persisted as extension entries. Markers are inserted into
@@ -124,8 +126,9 @@ Every call includes one handoff:
 
 ```ts
 {
-  mode: "navigate" | "fork" | "compact" | "new";
+  mode: "navigate" | "fork" | "compact" | "new" | "switch";
   targetEntryId?: string;
+  targetSessionFile?: string;
   compactionInstructions?: string;
   handoff:
     | { kind: "inline"; text: string }
@@ -139,10 +142,22 @@ Every call includes one handoff:
 | `fork`     | New session     | Copy of the path through `targetEntryId`  |
 | `compact`  | Current session | Pi's summary and retained recent messages |
 | `new`      | New session     | No inherited conversation                 |
+| `switch`   | Another session | Its path through `targetEntryId`          |
 
-`targetEntryId` is required only for `navigate` and `fork`. It must identify a
+`targetEntryId` is required for `navigate` and `fork`. It must identify a
 complete turn. The selected entry is retained. Mid-batch tool results, unmatched
 tool calls, user messages, and arbitrary metadata entries are rejected.
+
+`switch` takes `targetSessionFile` and `targetEntryId` together, or neither.
+Without them, it returns to the source session file and checkpoint of the
+latest handoff on the current branch that came from another session. A switch
+after `new` or `fork` therefore goes back to where that handoff started, and
+a second switch goes forward again. The target must be a saved Pi session in
+the same working directory, other than the current session. A relative path
+resolves against the working directory. The extension validates the target
+from a read-only copy of the file before switching. It then opens the session
+the way `/resume` does, moves to the checkpoint, and appends the handoff
+there.
 
 `compactionInstructions` is allowed only for `compact`. It guides the summarizer.
 It is **not** the post-compaction handoff.
@@ -199,13 +214,14 @@ finish. The initial result says **accepted**, not completed.
 1. Validate the request, destination, and absence of pending user input.
 2. Record the request and terminate the tool batch.
 3. At `agent_settled`, run `/handoff apply <operation-id>`.
-4. Navigate, fork, compact, or create the new session through Pi's public APIs.
+4. Navigate, fork, compact, create the new session, or switch sessions through
+   Pi's public APIs.
 5. Append exactly one handoff after success and start the next agent run.
 
 Pi runs prompts sent from settled handlers after those handlers return and
 before it resolves idle waits, so its print and JSON hosts do not exit before
-the handoff completes. Forks and new sessions use Pi's
-fresh replacement context. Continuation starts after the host finishes its
+the handoff completes. Forks, new sessions, and switches use Pi's fresh
+replacement context. Continuation starts after the host finishes its
 replacement action, so a late editor reset cannot erase a new draft.
 In every mode, the handoff message itself starts the next run. The model
 receives it as a user-role message, but the session records it as an
@@ -238,9 +254,11 @@ saved request.
 /handoff fork <checkpoint-id> <message>
 /handoff navigate <checkpoint-id> <message>
 /handoff compact <message>
+/handoff switch <message>
+/handoff switch <session-file> <checkpoint-id> <message>
 ```
 
-The command performs the same four modes for you. Your message becomes the
+The command performs the same five modes for you. Your message becomes the
 handoff and starts the next agent run. It is marked as user-authored and
 carries the same source checkpoint and workspace reminders as an agent handoff.
 The message has the same 16,000-character limit. `compact` uses Pi's default
@@ -250,14 +268,19 @@ instructions.
 In the interactive UI and RPC, you can leave parts out. With no arguments, the
 command asks for the mode. For `fork` and `navigate` without a checkpoint ID,
 it lists the 50 newest checkpoints across the session tree with their entry ID
-and a short preview. Without a message, it opens an editor. Cancelling any step
+and a short preview. `switch` without a session file returns to the latest
+handoff's source, like the tool. When no handoff names one, it lists the 50
+most recently changed sessions in this working directory, then that session's
+checkpoints. A session file without a checkpoint ID also opens the checkpoint
+list. Put a session path that contains spaces in double quotes. Without a
+message, it opens an editor. Cancelling any step
 changes nothing. Print and JSON modes have no dialogs, so there the command
 needs every part.
 
 The command runs only when the agent is idle. It applies the same checks as an
 agent handoff: no queued input, no unsubmitted editor draft, a valid
-checkpoint, and a persisted session for `fork` and `new`. It records the same
-operation journal.
+checkpoint, and a persisted session for `fork`, `new`, and `switch`. It
+records the same operation journal.
 
 If another extension also registers `/handoff`, Pi lists the two commands as
 `/handoff:1` and `/handoff:2` in load order. Type the one whose description
@@ -270,8 +293,11 @@ command by that description and keep working.
 - A fork is not a filesystem sandbox.
 - A new session loads normal system and project instructions in the same
   working directory. It does not inherit the old conversation.
-- Fork and new-session modes require a persisted session so the original can
-  be resumed. Navigation and compaction also work with in-memory sessions.
+- Fork, new-session, and switch modes require a persisted session so the
+  original can be resumed. Navigation and compaction also work with in-memory
+  sessions.
+- A switch opens a session in the same working directory only. It changes
+  which saved conversation is active, not the workspace.
 - Carry current user restrictions, changed paths, validation results, active
   process handles, remaining work, and next steps in the handoff or findings file.
 - Agent-authored handoffs do not grant new permissions. Handoffs you send with
@@ -303,9 +329,11 @@ directory is in effect. Other Pi launches keep their own environment.
 ### Live validation
 
 Before releasing, run `npm run test:live` with an existing Pi Codex login.
-It exercises inspection, all four handoff modes, automatic continuation, and
-source-history preservation through the shipped Pi CLI. A second test forks
-with a typed `/handoff` command. A third test loads Pi's built-in
+It exercises inspection, the navigate, fork, compact, and new handoff modes,
+automatic continuation, and source-history preservation through the shipped Pi
+CLI. A second test forks with a typed `/handoff` command. A third test hands
+off to a new session with `/handoff new`, then has the agent switch back to
+the source session. A fourth test loads Pi's built-in
 `codemode` extension. It checks that a script receives a structured
 `session_inspect` response and cannot reach `session_handoff`. The tests use
 synthetic conversations and isolated sessions. They make billed requests.

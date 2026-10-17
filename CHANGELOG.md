@@ -4,6 +4,15 @@ All notable changes are documented here using Keep a Changelog.
 
 ## Unreleased
 
+### Added
+
+- `switch` mode returns to a checkpoint in another saved session in the same working directory,
+  then continues with the handoff message. Use it as `/handoff switch <message>` or as
+  `session_handoff` mode `switch`. Without a target, it goes back to the session and checkpoint
+  that the latest handoff came from, so a fresh session or fork can report back to its source. Name
+  a session file and checkpoint to pick another target. In the interactive UI and RPC, omitted
+  parts are chosen from lists of recent sessions and their checkpoints.
+
 ## 0.0.9 - 2026-10-17
 
 ### Changed

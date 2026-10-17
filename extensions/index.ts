@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
+import { resolve } from "node:path";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
   SessionEntry,
 } from "@earendil-works/pi-coding-agent";
-import { truncateHead } from "@earendil-works/pi-coding-agent";
+import { SessionManager, truncateHead } from "@earendil-works/pi-coding-agent";
 import { Value } from "typebox/value";
 import { requirePiVersion } from "../src/pi-version.ts";
 import {
@@ -29,6 +30,14 @@ import {
   type PreparedHandoff,
 } from "../src/handoff.ts";
 import {
+  NO_SOURCE,
+  existingFile,
+  handoffSource,
+  openSession,
+  switchTarget,
+  type SwitchTarget,
+} from "../src/switch.ts";
+import {
   handoffSchema,
   inspectOutputSchema,
   inspectSchema,
@@ -39,7 +48,7 @@ import {
 
 const COMMAND = "handoff";
 const COMMAND_DESCRIPTION =
-  "Start a new session, fork, return to a checkpoint, or compact, then continue with your message";
+  "Start a new session, fork, return to a checkpoint, compact, or switch sessions, then continue with your message";
 const MAX_TEXT = 16000;
 type NewSessionOptions = NonNullable<Parameters<ExtensionCommandContext["newSession"]>[0]>;
 type ReplacementContext = Parameters<NonNullable<NewSessionOptions["withSession"]>>[0];
@@ -90,6 +99,16 @@ function journalSummary(entries: readonly SessionEntry[]) {
   return [...operations.values()];
 }
 
+/** The switch destination a request names, once acceptance has filled in both fields. */
+function requestedTarget(input: HandoffInput): SwitchTarget | undefined {
+  return input.targetSessionFile && input.targetEntryId
+    ? { sessionFile: input.targetSessionFile, entryId: input.targetEntryId }
+    : undefined;
+}
+
+const PERSISTED_ONLY =
+  "Fork, new, and switch require a persisted session so the source history remains recoverable. Run Pi without --no-session.";
+
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : "Session operation failed.";
 }
@@ -122,6 +141,28 @@ function ownCommand(pi: ExtensionAPI): string | undefined {
         command.description === COMMAND_DESCRIPTION,
     );
   return commands.length === 1 ? commands[0]?.name : undefined;
+}
+
+/** Ask for another saved session in this working directory, newest first. */
+async function chooseSession(ctx: ExtensionCommandContext): Promise<string | undefined> {
+  const current = ctx.sessionManager.getSessionFile();
+  const sessions = (await SessionManager.list(ctx.cwd, ctx.sessionManager.getSessionDir()))
+    .filter(
+      (session) =>
+        session.messageCount > 0 &&
+        resolve(session.cwd) === resolve(ctx.cwd) &&
+        (!current || resolve(session.path) !== resolve(current)),
+    )
+    .toSorted((a, b) => b.modified.getTime() - a.modified.getTime())
+    .slice(0, 50);
+  if (!sessions.length) throw new Error("No other saved session in this working directory.");
+  const labels = sessions.map((session) => {
+    const title = (session.name ?? session.firstMessage).replaceAll(/\s+/g, " ").trim();
+    const time = session.modified.toISOString().slice(0, 16).replace("T", " ");
+    return `${session.id.slice(0, 8)}  ${time}  ${title.slice(0, 80)}`;
+  });
+  const choice = await ctx.ui.select("Session to switch to", labels);
+  return sessions[labels.indexOf(choice ?? "")]?.path;
 }
 
 export default function sessionTools(pi: ExtensionAPI): void {
@@ -179,7 +220,8 @@ export default function sessionTools(pi: ExtensionAPI): void {
       const replaced =
         request.applying &&
         ((request.input.mode === "fork" && event.reason === "fork") ||
-          (request.input.mode === "new" && event.reason === "new"));
+          (request.input.mode === "new" && event.reason === "new") ||
+          (request.input.mode === "switch" && event.reason === "resume"));
       record(request, replaced ? "replaced" : "interrupted", {
         ...(event.targetSessionFile ? { destinationSessionFile: event.targetSessionFile } : {}),
       });
@@ -350,9 +392,18 @@ export default function sessionTools(pi: ExtensionAPI): void {
         display: true,
       };
       record(request, "applying", { origin });
-      if (request.input.targetEntryId)
+      // Check the destination again: either session may have changed since acceptance.
+      const target =
+        request.input.mode === "switch"
+          ? switchTarget(ctx.sessionManager, ctx.cwd, requestedTarget(request.input))
+          : undefined;
+      if (request.input.targetEntryId && !target)
         requireCheckpoint(ctx.sessionManager, request.input.targetEntryId);
-      if (request.input.mode === "new" || request.input.mode === "fork") {
+      if (
+        request.input.mode === "new" ||
+        request.input.mode === "fork" ||
+        request.input.mode === "switch"
+      ) {
         let resume: (() => Promise<void>) | undefined;
         const withSession = async (replacement: ReplacementContext) => {
           replaced = true;
@@ -367,13 +418,24 @@ export default function sessionTools(pi: ExtensionAPI): void {
             ) {
               throw new Error("Replacement session received input before handoff delivery.");
             }
+            if (target) {
+              requireCheckpoint(replacement.sessionManager, target.entryId);
+              const moved = await replacement.navigateTree(target.entryId, { summarize: false });
+              if (moved.cancelled) throw new Error("Navigation was cancelled.");
+              if (replacement.sessionManager.getLeafId() !== target.entryId) {
+                throw new Error(
+                  "Another extension changed the destination before handoff delivery.",
+                );
+              }
+            }
             // Pi prepares a custom-message run like a prompt, so the handoff
             // itself starts the continuation with current instructions and tools.
             await replacement.sendMessage(message, { triggerTurn: true });
           };
         };
-        const result =
-          request.input.mode === "fork"
+        const result = target
+          ? await ctx.switchSession(target.sessionFile, { withSession })
+          : request.input.mode === "fork"
             ? await ctx.fork(request.input.targetEntryId ?? "", { position: "at", withSession })
             : await ctx.newSession({
                 ...(sessionFile ? { parentSession: sessionFile } : {}),
@@ -449,7 +511,26 @@ export default function sessionTools(pi: ExtensionAPI): void {
     if (pending) throw new Error("A handoff is already pending.");
     if (!ctx.isIdle()) throw new Error("Wait for the agent to finish before handing off.");
     const manager = ctx.sessionManager;
-    const parsed = parseHandoffCommand(args, (id) => manager.getEntry(id) !== undefined);
+    const currentFile = manager.getSessionFile();
+    const parsed = parseHandoffCommand(args, {
+      isEntry(id, sessionFile) {
+        if (!sessionFile) return manager.getEntry(id) !== undefined;
+        try {
+          return openSession(sessionFile, ctx.cwd, currentFile).manager.getEntry(id) !== undefined;
+        } catch (error) {
+          if (error instanceof Error) return false;
+          throw error;
+        }
+      },
+      isFile(path) {
+        try {
+          return existingFile(path, ctx.cwd) !== undefined;
+        } catch (error) {
+          if (error instanceof Error) return false;
+          throw error;
+        }
+      },
+    });
     let mode: Mode | undefined = parsed.mode;
     if (!mode) {
       if (!ctx.hasUI) throw new Error(USAGE);
@@ -458,7 +539,34 @@ export default function sessionTools(pi: ExtensionAPI): void {
       mode = MODES[labels.indexOf(choice ?? "")]?.mode;
       if (!mode) return undefined;
     }
+    if (mode !== "navigate" && mode !== "compact" && !currentFile) throw new Error(PERSISTED_ONLY);
     let targetEntryId = parsed.targetEntryId;
+    let targetSessionFile = parsed.targetSessionFile;
+    if (mode === "switch") {
+      // Without a named session, return to where the latest handoff came from.
+      const source = targetSessionFile ? undefined : handoffSource(manager);
+      if (source) {
+        targetSessionFile = source.sessionFile;
+        targetEntryId = source.entryId;
+      }
+      if (!targetSessionFile) {
+        if (!ctx.hasUI) throw new Error(NO_SOURCE);
+        targetSessionFile = await chooseSession(ctx);
+        if (!targetSessionFile) return undefined;
+      }
+      if (!targetEntryId) {
+        if (!ctx.hasUI) throw new Error(USAGE);
+        const options = recentCheckpoints(
+          openSession(targetSessionFile, ctx.cwd, currentFile).manager,
+          50,
+        );
+        if (!options.length) throw new Error("That session has no completed turn to return to.");
+        const labels = options.map((item) => `${item.entryId}  ${item.preview}`);
+        const choice = await ctx.ui.select("Checkpoint to switch to", labels);
+        targetEntryId = options[labels.indexOf(choice ?? "")]?.entryId;
+        if (!targetEntryId) return undefined;
+      }
+    }
     if (!targetEntryId && (mode === "fork" || mode === "navigate")) {
       if (!ctx.hasUI) throw new Error(USAGE);
       const options = recentCheckpoints(manager, 50);
@@ -484,11 +592,6 @@ export default function sessionTools(pi: ExtensionAPI): void {
       throw new Error("The agent started while the handoff was being prepared.");
     }
     if (!ctx.model) throw new Error("A model is required to continue after a handoff.");
-    if ((mode === "fork" || mode === "new") && !manager.getSessionFile()) {
-      throw new Error(
-        "Fork and new require a persisted session so the source history remains recoverable. Run Pi without --no-session.",
-      );
-    }
     if (ctx.hasPendingMessages()) throw new Error("Handle queued user input before handing off.");
     if (ctx.mode === "tui" && ctx.ui.getEditorText().trim()) {
       throw new Error("Finish or save the editor draft before handing off.");
@@ -497,9 +600,22 @@ export default function sessionTools(pi: ExtensionAPI): void {
     if (!sourceId || !lastCheckpoint(manager)) {
       throw new Error("No completed turn to hand off from yet.");
     }
-    if (targetEntryId) requireCheckpoint(manager, targetEntryId);
+    if (mode === "switch") {
+      const target = switchTarget(
+        manager,
+        ctx.cwd,
+        targetSessionFile && targetEntryId
+          ? { sessionFile: targetSessionFile, entryId: targetEntryId }
+          : undefined,
+      );
+      targetSessionFile = target.sessionFile;
+      targetEntryId = target.entryId;
+    } else if (targetEntryId) {
+      requireCheckpoint(manager, targetEntryId);
+    }
     const input: HandoffInput = {
       mode,
+      ...(targetSessionFile ? { targetSessionFile } : {}),
       ...(targetEntryId ? { targetEntryId } : {}),
       handoff: { kind: "inline", text },
     };
@@ -574,9 +690,9 @@ export default function sessionTools(pi: ExtensionAPI): void {
     name: "session_handoff",
     label: "Hand off session",
     description:
-      "Continue your work after navigating to a checkpoint, forking, compacting, or starting a new session. Requires a self-contained inline handoff or an existing findings file and instruction. Appends it only after success and resumes automatically. Does not launch a subagent or restore files. Call this tool alone. targetEntryId is required only for navigate/fork. compactionInstructions guides the summarizer, not the post-compaction message. Returns accepted, not completed.",
+      "Continue your work after navigating to a checkpoint, forking, compacting, starting a new session, or switching to a checkpoint in another saved session. Requires a self-contained inline handoff or an existing findings file and instruction. Appends it only after success and resumes automatically. Does not launch a subagent or restore files. Call this tool alone. targetEntryId is required for navigate/fork. switch takes targetSessionFile with targetEntryId, or neither to return to the source checkpoint of the latest handoff from another session. compactionInstructions guides the summarizer, not the post-compaction message. Returns accepted, not completed.",
     promptSnippet:
-      "Hand off work to a selected checkpoint, compacted context, fork, or fresh session",
+      "Hand off work to a selected checkpoint, compacted context, fork, fresh session, or another saved session",
     promptGuidelines: [
       "Use session_handoff alone after finishing other tools. Preserve current user constraints, completed changes, validation, active processes, and next steps in its handoff.",
       "Use checkpoint IDs already in context with session_handoff. Use session_inspect only when a checkpoint or its context is missing.",
@@ -598,10 +714,12 @@ export default function sessionTools(pi: ExtensionAPI): void {
       validateHandoff(input);
       if (pending) throw new Error("A handoff is already pending.");
       if (!ctx.model) throw new Error("A model is required to continue after a handoff.");
-      if ((input.mode === "fork" || input.mode === "new") && !ctx.sessionManager.getSessionFile()) {
-        throw new Error(
-          "Fork and new require a persisted session so the source history remains recoverable. Run Pi without --no-session.",
-        );
+      if (
+        input.mode !== "navigate" &&
+        input.mode !== "compact" &&
+        !ctx.sessionManager.getSessionFile()
+      ) {
+        throw new Error(PERSISTED_ONLY);
       }
       if (ctx.hasPendingMessages()) throw new Error("Handle queued user input before handing off.");
       if (ctx.mode === "tui" && ctx.ui.getEditorText().trim()) {
@@ -609,9 +727,18 @@ export default function sessionTools(pi: ExtensionAPI): void {
       }
       const sessionId = ctx.sessionManager.getSessionId();
       const assistantId = assertSoleCall(ctx, toolCallId);
-      if (input.targetEntryId) requireCheckpoint(ctx.sessionManager, input.targetEntryId);
+      const target =
+        input.mode === "switch"
+          ? switchTarget(ctx.sessionManager, ctx.cwd, requestedTarget(input))
+          : undefined;
+      if (input.targetEntryId && !target)
+        requireCheckpoint(ctx.sessionManager, input.targetEntryId);
+      // Record the resolved destination, so a later handoff cannot change where this one goes.
+      const accepted: HandoffInput = target
+        ? { ...input, targetSessionFile: target.sessionFile, targetEntryId: target.entryId }
+        : input;
       const startEpoch = epoch;
-      const prepared = await prepareHandoff(input, ctx.cwd, signal);
+      const prepared = await prepareHandoff(accepted, ctx.cwd, signal);
       signal?.throwIfAborted();
       if (
         startEpoch !== epoch ||
@@ -624,7 +751,7 @@ export default function sessionTools(pi: ExtensionAPI): void {
       const request: Request = {
         id: randomUUID(),
         author: "agent",
-        input,
+        input: accepted,
         prepared,
         sessionId,
         sourceId: assistantId,
@@ -632,7 +759,7 @@ export default function sessionTools(pi: ExtensionAPI): void {
         applying: false,
         ...(signal ? { signal } : {}),
       };
-      record(request, "accepted", { input, prepared, assistantId, author: "agent" });
+      record(request, "accepted", { input: accepted, prepared, assistantId, author: "agent" });
       pending = request;
       // agent_settled dispatches the command. Never await it from this tool.
       return {

@@ -12,6 +12,8 @@
   Replacement continuations must enter Pi's normal prompt preparation path.
 - Use the public Pi extension API. Do not mutate session JSONL or runtime internals.
 - Navigation accepts complete assistant/tool-batch boundaries, not arbitrary messages.
+- `switch` targets only other saved sessions in the same working directory. Validate the
+  target from an in-memory copy, so the check never writes the target file.
 - Keep inspection bounded and read-only. Never include thinking blocks.
 - Preserve source history. Never restore workspace files or automatically replay uncertain handoffs.
 - Keep handoff messages separate from summarizer instructions.

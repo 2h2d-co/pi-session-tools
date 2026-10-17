@@ -18,7 +18,18 @@ test("mode and handoff field combinations are exclusive", () => {
   validateHandoff(inline);
   validateHandoff({ ...inline, mode: "compact", compactionInstructions: "Preserve tests" });
   validateHandoff({ ...inline, mode: "fork", targetEntryId: "checkpoint" });
+  validateHandoff({ ...inline, mode: "switch" });
+  validateHandoff({
+    ...inline,
+    mode: "switch",
+    targetSessionFile: "other.jsonl",
+    targetEntryId: "checkpoint",
+  });
   for (const input of [
+    { ...inline, mode: "switch", targetEntryId: "checkpoint" },
+    { ...inline, mode: "switch", targetSessionFile: "other.jsonl" },
+    { ...inline, mode: "fork", targetEntryId: "checkpoint", targetSessionFile: "other.jsonl" },
+    { ...inline, targetSessionFile: "other.jsonl" },
     { ...inline, targetEntryId: "not-allowed" },
     { ...inline, mode: "navigate" },
     { ...inline, compactionInstructions: "not-allowed" },

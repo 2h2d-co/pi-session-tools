@@ -8,3 +8,4 @@ src/handoff.ts
 src/history.ts
 src/pi-version.ts
 src/schemas.ts
+src/switch.ts

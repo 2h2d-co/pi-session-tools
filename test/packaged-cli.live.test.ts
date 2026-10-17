@@ -325,6 +325,94 @@ test(
 );
 
 test(
+  "live packaged Pi CLI switches back to the source session after a new-session handoff",
+  { skip: process.env["PI_SESSION_TOOLS_LIVE_TEST"] !== "1", timeout: 400_000 },
+  async (t) => {
+    const { temporary, cli, env, extension, pi } = await packagedCli(t);
+    const cwd = join(temporary, "switch");
+    const sessions = join(cwd, "sessions");
+    await mkdir(sessions, { recursive: true });
+    const source = join(sessions, "source.jsonl");
+    const args = (session: string) => [
+      cli,
+      "--print",
+      "--offline",
+      "--no-extensions",
+      "--no-skills",
+      "--no-prompt-templates",
+      "--no-context-files",
+      "--tools",
+      "session_inspect,session_handoff",
+      "--provider",
+      "openai-codex",
+      "--model",
+      "gpt-6-luna",
+      "--thinking",
+      "low",
+      "--session",
+      session,
+      "--session-dir",
+      sessions,
+      "-e",
+      extension,
+    ];
+    const options = { cwd, env, timeout: 150_000, maxBuffer: 2 * 1024 * 1024 };
+    const seed = await pi(
+      sessions,
+      [...args(source), "Remember the synthetic code word LANTERN. Reply with only: noted."],
+      options,
+    );
+    assert.doesNotMatch(seed.stderr, /Failed to load extension|Extension error|not a function/);
+    const sourceId = SessionManager.open(source).getSessionId();
+    const fresh = await pi(
+      sessions,
+      [...args(source), "/handoff new Reply with only: ready. Do not call tools."],
+      options,
+    );
+    assert.doesNotMatch(fresh.stderr, /Failed to load extension|Extension error|not a function/);
+    const others = [];
+    for (const file of await readdir(sessions)) {
+      if (!file.endsWith(".jsonl")) continue;
+      if (SessionManager.open(join(sessions, file)).getSessionId() !== sourceId) {
+        others.push(join(sessions, file));
+      }
+    }
+    assert.equal(others.length, 1, "The new-session handoff creates exactly one session.");
+    const created = others[0];
+    assert.ok(created);
+    const before = await readFile(source, "utf8");
+    const input = {
+      mode: "switch",
+      handoff: {
+        kind: "inline",
+        text: "Reply with only the code word from earlier, followed by _RETURNED. Do not call tools.",
+      },
+    };
+    const result = await pi(
+      sessions,
+      [
+        ...args(created),
+        `Call session_handoff exactly once, alone, with these arguments: ${JSON.stringify(input)}`,
+      ],
+      options,
+    );
+    assert.match(result.stdout, /LANTERN_RETURNED/);
+    assert.doesNotMatch(result.stderr, /Failed to load extension|Extension error|not a function/);
+    assert.ok((await readFile(source, "utf8")).startsWith(before), "Source history is preserved.");
+    const destination = SessionManager.open(source);
+    const handoffs = destination
+      .getBranch()
+      .filter((entry) => entry.type === "custom_message" && entry.customType === HANDOFF_TYPE);
+    assert.equal(handoffs.length, 1);
+    assert.match(JSON.stringify(handoffs[0]), /Agent-authored session handoff/);
+    const assistant = destination.buildSessionContext().messages.at(-1);
+    assert.ok(assistant?.role === "assistant");
+    assert.equal(assistant.stopReason, "stop", "The continuation must complete successfully.");
+    t.diagnostic(`Pi ${piVersion}: live agent switch back to the source session passed.`);
+  },
+);
+
+test(
   "live packaged Pi CLI gives codemode scripts structured inspections but not session_handoff",
   { skip: process.env["PI_SESSION_TOOLS_LIVE_TEST"] !== "1", timeout: 300_000 },
   async (t) => {
