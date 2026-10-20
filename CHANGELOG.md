@@ -4,6 +4,8 @@ All notable changes are documented here using Keep a Changelog.
 
 ## Unreleased
 
+## 0.0.10 - 2026-10-20
+
 ### Added
 
 - `switch` mode returns to a checkpoint in another saved session in the same working directory,
