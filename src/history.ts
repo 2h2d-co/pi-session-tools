@@ -6,7 +6,7 @@ import {
   type SessionEntry,
   type SessionMessageEntry,
 } from "@earendil-works/pi-coding-agent";
-import type { InspectHistory, InspectInput } from "./schemas.ts";
+import type { CheckpointSummary, InspectHistory, InspectInput } from "./schemas.ts";
 
 type ReadonlySessionManager = ExtensionContext["sessionManager"];
 
@@ -294,7 +294,7 @@ export function inspectSession(
   const anchorPath = cursor.anchorId ? manager.getBranch(cursor.anchorId) : [];
   const ancestors = new Set(anchorPath.map((entry) => entry.id));
   const anchorCheckpoint = anchorPath.toReversed().find((entry) => index.has(entry.id))?.id ?? null;
-  const describe = (checkpoint: Checkpoint) => {
+  const describe = (checkpoint: Checkpoint): CheckpointSummary => {
     const { entry } = checkpoint;
     let unavailableReason: string | null = null;
     try {
